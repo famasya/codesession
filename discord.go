@@ -2,19 +2,23 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/sst/opencode-sdk-go"
 )
 
 var discord *discordgo.Session
+var mainWaitGroup *sync.WaitGroup
+var mainContext context.Context
 
 func RunDiscordBot(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
+
+	// Store references for message handlers
+	mainWaitGroup = wg
+	mainContext = ctx
 
 	botToken := AppConfig.BotToken
 	if botToken == "" {
@@ -51,11 +55,11 @@ func RunDiscordBot(ctx context.Context, wg *sync.WaitGroup) {
 		return
 	}
 
-	// listen to messages
-	listenToOpencodeEvents(ctx, wg)
-
 	// wait for ctx to be canceled
 	<-ctx.Done()
+	
+	// Stop all active listeners before closing discord
+	stopAllActiveListeners()
 	discord.Close()
 	slog.Info("discord bot stopped")
 }
@@ -144,54 +148,4 @@ func repositoryList() ([]Repository, error) {
 	}
 
 	return repositoryList, nil
-}
-
-func listenToOpencodeEvents(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	client := Opencode()
-	if client == nil {
-		slog.Error("failed to initialize opencode client for event listening")
-		return
-	}
-
-	stream := client.Event.ListStreaming(ctx, opencode.EventListParams{})
-	for stream.Next() {
-		event := stream.Current()
-		if event.Type == opencode.EventListResponseTypeServerConnected {
-			slog.Info("opencode server connected")
-		}
-		if event.Type == opencode.EventListResponseTypeSessionIdle {
-			slog.Debug("opencode session idle")
-			eventData := serializeEvent[struct {
-				sessionID string
-			}](&event)
-			if eventData == nil {
-				slog.Error("failed to serialize event to json")
-				continue
-			}
-			// set session inactive
-			session := SetSessionActiveBySessionID(eventData.sessionID, false)
-			if session == nil {
-				slog.Error("failed to set session active state by session ID")
-				continue
-			}
-		}
-	}
-
-	if err := stream.Err(); err != nil {
-		slog.Error("error in opencode event stream", "error", err)
-	}
-
-	slog.Info("opencode events listener stopped")
-}
-
-func serializeEvent[T any](event *opencode.EventListResponse) *T {
-	var data T
-	err := json.Unmarshal([]byte(event.JSON.Properties.Raw()), &data)
-	if err != nil {
-		slog.Error("failed to serialize event to json", "error", err)
-		return nil
-	}
-	return &data
 }

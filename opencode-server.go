@@ -23,6 +23,9 @@ func RunOpencodeServer(ctx context.Context, wg *sync.WaitGroup) {
 		slog.Error("failed to start opencode server", "error", err)
 		os.Exit(1)
 	}
+	// initialize opencode client
+	Opencode()
+
 	slog.Info("opencode server started")
 
 	// wait for cancellation, then kill the process

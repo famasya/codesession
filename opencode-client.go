@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/sst/opencode-sdk-go" // imported as opencode
@@ -28,6 +30,10 @@ type SessionData struct {
 var sessionCache = make(map[string]*SessionData)
 var sessionMutex sync.RWMutex
 
+// Active event listeners management
+var activeListeners = make(map[string]context.CancelFunc)
+var listenersMutex sync.RWMutex
+
 // setup opencode singleton
 func Opencode() *opencode.Client {
 	if opencodeClient == nil {
@@ -40,6 +46,15 @@ func Opencode() *opencode.Client {
 		worktreesDirectory = fmt.Sprintf("%s/.worktrees", currentDir)
 		sessionsDirectory = fmt.Sprintf("%s/.sessions", currentDir)
 
+		slog.Debug("worktrees directory", "worktrees_directory", worktreesDirectory)
+		slog.Debug("sessions directory", "sessions_directory", sessionsDirectory)
+
+		// Create worktrees directory if it doesn't exist
+		if err := os.MkdirAll(worktreesDirectory, 0755); err != nil {
+			slog.Error("failed to create worktrees directory", "error", err)
+			return nil
+		}
+
 		// Create sessions directory if it doesn't exist
 		if err := os.MkdirAll(sessionsDirectory, 0755); err != nil {
 			slog.Error("failed to create sessions directory", "error", err)
@@ -49,55 +64,51 @@ func Opencode() *opencode.Client {
 		opencodeClient = opencode.NewClient(
 			option.WithBaseURL(fmt.Sprintf("http://127.0.0.1:%d", AppConfig.OpencodePort)),
 		)
-		loadSessions()
 	}
 	return opencodeClient
 }
 
-// load existing sessions from .sessions directory
-func loadSessions() {
+// lazyLoadSession attempts to load a session from file for a specific threadID
+func lazyLoadSession(threadID string) *SessionData {
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 
-	files, err := os.ReadDir(sessionsDirectory)
+	// Check if already in cache
+	if sessionData, exists := sessionCache[threadID]; exists {
+		return sessionData
+	}
+
+	// Try to load from file
+	filePath := filepath.Join(sessionsDirectory, fmt.Sprintf("%s.json", threadID))
+	data, err := os.ReadFile(filePath)
+	slog.Debug("lazy loading session from file", "thread_id", threadID, "file_path", filePath, "error", err)
 	if err != nil {
-		slog.Error("failed to read sessions directory", "error", err)
-		return
+		// File doesn't exist, no session to load
+		return nil
 	}
 
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == ".json" {
-			filePath := filepath.Join(sessionsDirectory, file.Name())
-			data, err := os.ReadFile(filePath)
-			if err != nil {
-				slog.Error("failed to read session file", "file", file.Name(), "error", err)
-				continue
-			}
-
-			var sessionData SessionData
-			if err := json.Unmarshal(data, &sessionData); err != nil {
-				slog.Error("failed to unmarshal session data", "file", file.Name(), "error", err)
-				continue
-			}
-
-			// Try to restore session
-			ctx := context.Background()
-			session, err := opencodeClient.Session.Get(ctx, sessionData.SessionID, opencode.SessionGetParams{})
-			if err != nil {
-				slog.Warn("failed to restore session, will create new one", "thread_id", sessionData.ThreadID, "error", err)
-				// Remove invalid session file
-				os.Remove(filePath)
-				continue
-			}
-
-			// Store session with in-memory data (initially inactive)
-			sessionData.Session = session
-			sessionData.Active = false
-			sessionCache[sessionData.ThreadID] = &sessionData
-
-			slog.Debug("restored session", "thread_id", sessionData.ThreadID, "session_id", session.ID)
-		}
+	var sessionData SessionData
+	if err := json.Unmarshal(data, &sessionData); err != nil {
+		slog.Error("failed to unmarshal session data", "thread_id", threadID, "error", err)
+		return nil
 	}
+
+	// Use the sessionID from the file to connect to OpenCode
+	// Note: We don't need to "restore" the session from server, just use the sessionID
+	// The OpenCode server will handle the session, we just need to reference it
+
+	// Create a mock session object with the sessionID from file
+	session := &opencode.Session{
+		ID: sessionData.SessionID,
+	}
+
+	// Store session with in-memory data (initially inactive)
+	sessionData.Session = session
+	sessionData.Active = false
+	sessionCache[threadID] = &sessionData
+
+	slog.Info("lazy loaded session", "thread_id", threadID, "session_id", session.ID)
+	return &sessionData
 }
 
 // save session data to .sessions directory
@@ -116,18 +127,11 @@ func saveSessionData(sessionData *SessionData) error {
 
 // get or create session for thread
 func GetOrCreateSession(threadID, worktreePath string) *opencode.Session {
-	// Ensure OpenCode client is initialized
 	client := Opencode()
-	if client == nil {
-		slog.Error("failed to initialize opencode client")
-		return nil
-	}
 
-	sessionMutex.RLock()
-	sessionData, exists := sessionCache[threadID]
-	sessionMutex.RUnlock()
-
-	if exists {
+	// Try to lazy load session first
+	sessionData := lazyLoadSession(threadID)
+	if sessionData != nil {
 		slog.Info("using existing session", "thread_id", threadID)
 		// Mark session as active
 		sessionMutex.Lock()
@@ -172,16 +176,12 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 		return nil
 	}
 
-	// Ensure OpenCode client is initialized
 	client := Opencode()
-	if client == nil {
-		slog.Error("failed to initialize opencode client")
-		return nil
-	}
-
 	ctx := context.Background()
+	worktreePath := fmt.Sprintf("%s/%s", worktreesDirectory, threadID)
+	slog.Debug("sending message to session", "thread_id", threadID, "session_id", session.ID, "message", message, "worktree_path", worktreePath)
 	response, err := client.Session.Prompt(ctx, session.ID, opencode.SessionPromptParams{
-		Directory: opencode.F(fmt.Sprintf("%s/%s", worktreesDirectory, threadID)),
+		Directory: opencode.F(worktreePath),
 		Parts: opencode.F([]opencode.SessionPromptParamsPartUnion{
 			&opencode.TextPartInputParam{
 				Type: opencode.F(opencode.TextPartInputTypeText),
@@ -203,11 +203,18 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 
 // cleanup session (remove from cache and file)
 func CleanupSession(threadID string) error {
+	// Stop any active listener first
+	stopActiveListener(threadID)
+
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 
 	delete(sessionCache, threadID)
 	filePath := filepath.Join(sessionsDirectory, fmt.Sprintf("%s.json", threadID))
+	// remove only if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil
+	}
 	return os.Remove(filePath)
 }
 
@@ -265,4 +272,232 @@ func CleanupWorktree(threadID string) error {
 	// cleanup using git commands
 	cmd := exec.Command("git", "worktree", "remove", fmt.Sprintf("%s/%s", worktreesDirectory, threadID))
 	return cmd.Run()
+}
+
+func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID string) {
+	defer func() {
+		wg.Done()
+		slog.Debug("workgroup for OpencodeEventsListener released", "thread_id", threadID)
+	}()
+
+	// Get session data for this thread
+	sessionMutex.RLock()
+	sessionData, exists := sessionCache[threadID]
+	sessionMutex.RUnlock()
+
+	if !exists {
+		slog.Error("session not found for thread", "thread_id", threadID)
+		return
+	}
+
+	worktreePath := fmt.Sprintf("%s/%s", worktreesDirectory, threadID)
+	client := Opencode()
+	stream := client.Event.ListStreaming(ctx, opencode.EventListParams{
+		Directory: opencode.F(worktreePath),
+	})
+
+	for stream.Next() {
+		event := stream.Current()
+		switch event.Type {
+		case opencode.EventListResponseTypeServerConnected:
+			slog.Debug("started session event listener", "thread_id", threadID, "session_id", sessionData.SessionID)
+		case opencode.EventListResponseTypeMessagePartUpdated:
+			// Parse the event directly from raw JSON properties
+			eventData := serializeEvent[struct {
+				Part MessagePart `json:"part"`
+			}](&event)
+			if eventData == nil {
+				slog.Error("failed to serialize message part updated event")
+				continue
+			}
+
+			// for tool parts, only send completed tools to Discord
+			// for other parts (text, reasoning), send them regardless of time
+			part := eventData.Part
+			shouldSendToDiscord := false
+			if part.Type == PartTypeTool {
+				// for tools, check time in the state field (not part.Time)
+				if part.State != nil && part.State.Status == ToolStatusCompleted && part.State.Time != nil && part.State.Time.End != nil {
+					shouldSendToDiscord = true
+				}
+			} else {
+				// for non-tool parts (text, reasoning), send if time.end is present
+				if part.Time != nil && part.Time.End != nil {
+					shouldSendToDiscord = true
+				}
+			}
+
+			if !shouldSendToDiscord {
+				// skip if not ready for discord
+				continue
+			}
+
+			// format message based on part type
+			var discordMessage string
+			switch part.Type {
+			case PartTypeTool:
+				// for tool parts, only send completed tools to Discord
+				if part.Tool != "" && part.State != nil && part.State.Status == ToolStatusCompleted {
+					discordMessage = fmt.Sprintf("> %s tool: %s", part.State.Status, part.Tool)
+				}
+			case PartTypeReasoning:
+				if part.Text != "" {
+					// remove markdown formatting and wrap in blockquote
+					cleanText := removeMarkdownFormatting(part.Text)
+					discordMessage = fmt.Sprintf("> %s", cleanText)
+				}
+			case PartTypeText:
+				if part.Text != "" {
+					discordMessage = removeExcessiveNewLine(part.Text)
+				}
+			}
+
+			// debug log
+			slog.Debug("sending message to Discord", "thread_id", threadID, "session_id", sessionData.SessionID, "message", discordMessage)
+
+			// send to Discord if we have content
+			if discordMessage != "" {
+				sendToDiscord(threadID, discordMessage)
+			}
+		case opencode.EventListResponseTypeSessionIdle:
+			eventData := serializeEvent[struct {
+				SessionID string `json:"sessionId"`
+			}](&event)
+			if eventData == nil {
+				slog.Error("failed to serialize session idle event")
+				continue
+			}
+
+			slog.Debug("session idle detected", "thread_id", threadID, "session_id", eventData.SessionID)
+
+			// set session inactive and cleanup
+			SetSessionActive(threadID, false)
+
+			// remove from active listeners and exit
+			removeActiveListener(threadID)
+			return
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		slog.Error("error in opencode event stream", "thread_id", threadID, "error", err)
+	}
+
+	// Cleanup on exit
+	removeActiveListener(threadID)
+	slog.Debug("opencode events listener stopped", "thread_id", threadID)
+}
+
+func serializeEvent[T any](event *opencode.EventListResponse) *T {
+	var data T
+	slog.Debug("serializing event", "event", event.JSON.Properties.Raw())
+	err := json.Unmarshal([]byte(event.JSON.Properties.Raw()), &data)
+	if err != nil {
+		slog.Error("failed to serialize event to json", "error", err)
+		return nil
+	}
+	return &data
+}
+
+// removeActiveListener removes the cancel function for a session listener
+func removeActiveListener(threadID string) {
+	listenersMutex.Lock()
+	defer listenersMutex.Unlock()
+	delete(activeListeners, threadID)
+}
+
+// stopActiveListener cancels and removes a listener for a thread
+func stopActiveListener(threadID string) {
+	listenersMutex.Lock()
+	defer listenersMutex.Unlock()
+	if cancelFunc, exists := activeListeners[threadID]; exists {
+		cancelFunc()
+		delete(activeListeners, threadID)
+		slog.Debug("stopped active listener", "thread_id", threadID)
+	}
+}
+
+// stopAllActiveListeners cancels and removes all active listeners (for shutdown)
+func stopAllActiveListeners() {
+	listenersMutex.Lock()
+	defer listenersMutex.Unlock()
+	for threadID, cancelFunc := range activeListeners {
+		cancelFunc()
+		slog.Debug("stopped active listener", "thread_id", threadID)
+	}
+	// Clear the map
+	activeListeners = make(map[string]context.CancelFunc)
+	slog.Info("stopped all active listeners")
+}
+
+// spawnListenerIfNotExists atomically checks and spawns a listener for a thread
+// Returns true if a new listener was spawned, false if one already exists
+func spawnListenerIfNotExists(ctx context.Context, wg *sync.WaitGroup, threadID string) bool {
+	listenersMutex.Lock()
+	defer listenersMutex.Unlock()
+
+	// Check if listener already exists
+	if _, exists := activeListeners[threadID]; exists {
+		return false // Already exists
+	}
+
+	// Create child context for this listener
+	listenerCtx, cancel := context.WithCancel(ctx)
+
+	// Add to waitgroup and register listener
+	wg.Add(1)
+	activeListeners[threadID] = cancel
+
+	// Start listener
+	go OpencodeEventsListener(listenerCtx, wg, threadID)
+	slog.Debug("spawned session event listener", "thread_id", threadID)
+
+	return true // New listener spawned
+}
+
+// removeMarkdownFormatting removes common markdown formatting from text
+func removeMarkdownFormatting(text string) string {
+	// Remove bold (**text** or __text__)
+	text = regexp.MustCompile(`\*\*(.*?)\*\*`).ReplaceAllString(text, "$1")
+	text = regexp.MustCompile(`__(.*?)__`).ReplaceAllString(text, "$1")
+
+	// Remove italic (*text* or _text_)
+	text = regexp.MustCompile(`\*(.*?)\*`).ReplaceAllString(text, "$1")
+	text = regexp.MustCompile(`_(.*?)_`).ReplaceAllString(text, "$1")
+
+	// Remove code blocks (```code``` and `code`)
+	text = regexp.MustCompile("```[\\s\\S]*?```").ReplaceAllString(text, "")
+	text = regexp.MustCompile("`(.*?)`").ReplaceAllString(text, "$1")
+
+	// Remove headers (# ## ### etc.)
+	text = regexp.MustCompile(`^#+\s*`).ReplaceAllString(text, "")
+
+	// Remove links [text](url)
+	text = regexp.MustCompile(`\[([^\]]*)\]\([^\)]*\)`).ReplaceAllString(text, "$1")
+
+	// Clean up extra whitespace
+	text = strings.TrimSpace(text)
+
+	return text
+}
+
+func removeExcessiveNewLine(text string) string {
+	// remove excessive to only 1 new line
+	text = regexp.MustCompile(`\n\n+`).ReplaceAllString(text, "\n\n")
+	return text
+}
+
+// sendToDiscord sends a message to the Discord channel
+func sendToDiscord(threadID, message string) {
+	if discord == nil {
+		slog.Error("discord session not available", "thread_id", threadID)
+		return
+	}
+
+	_, err := discord.ChannelMessageSend(threadID, message)
+	if err != nil {
+		slog.Error("failed to send message to discord", "thread_id", threadID, "error", err)
+	} else {
+		slog.Debug("sent message to discord", "thread_id", threadID, "message_length", len(message))
+	}
 }

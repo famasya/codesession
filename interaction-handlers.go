@@ -142,18 +142,25 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	// get the thread ID (use channel ID if in a thread)
+	// get the thread ID
 	threadID := m.ChannelID
 
-	// check if we have a session for this thread
-	sessionMutex.RLock()
-	session, exists := sessionCache[threadID]
-	sessionMutex.RUnlock()
+	// if message is not in a thread, reply with error
+	if m.MessageReference == nil {
+		s.ChannelMessageSend(m.ChannelID, "Mentioned the bot outside of a thread. Please send your message in a thread.")
+		return
+	}
 
-	if !exists {
+	// try to lazy load session for this thread
+	slog.Debug("lazy loading session", "thread_id", threadID)
+	sessionData := lazyLoadSession(threadID)
+	if sessionData == nil {
 		s.ChannelMessageSend(m.ChannelID, "No OpenCode session found for this thread. Please start a session first using `/opencode` command.")
 		return
 	}
+
+	// spawn session listener if not already active (atomic operation)
+	spawnListenerIfNotExists(mainContext, mainWaitGroup, threadID)
 
 	// remove bot mention from the message
 	content := m.Content
@@ -172,8 +179,6 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// send typing indicator
 	s.ChannelTyping(m.ChannelID)
-
-	slog.Info("sending message to opencode", "thread_id", threadID, "session_id", session.Session.ID, "message", content)
 
 	// send message to opencode
 	response := SendMessage(threadID, content)
