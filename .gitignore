@@ -1,0 +1,8 @@
+tmp/*
+discord-opencode
+.claude/settings.local.json
+.sessions/*
+.worktrees/*
+!.sessions/.gitkeep
+!.worktrees/.gitkeep
+config.toml

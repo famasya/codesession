@@ -1,0 +1,8 @@
+bot_token = ""
+opencode_port = 5000
+log_level = "debug"
+models = ["z-ai/glm-4.5", "x-ai/grok-code-fast-1"] # available models in openrouter
+
+[[repository]]
+path = "/path/to/repository"
+name = "repository_name"

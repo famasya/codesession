@@ -1,0 +1,8 @@
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - cmd: air
+      # - cmd: opencode serve -p 5000
+    # parallel: true
