@@ -225,6 +225,10 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	client := Opencode()
 	response, err := client.Session.Prompt(context.Background(), session.SessionID, opencode.SessionPromptParams{
 		Directory: opencode.F(worktreePath),
+		Tools: opencode.F(map[string]bool{
+			"write": false,
+			"edit":  false,
+		}),
 		Parts: opencode.F([]opencode.SessionPromptParamsPartUnion{
 			&opencode.TextPartInputParam{
 				Type: opencode.F(opencode.TextPartInputTypeText),
