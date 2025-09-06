@@ -1,7 +1,16 @@
 bot_token = ""
 opencode_port = 5000
 log_level = "debug"
-summarizer_instruction = "Generate a git commit message in conventional commit format. The first line should be in the format 'type(scope): description'. Follow with a bullet-point list of key changes made in the session. Keep the entire message concise."
+
+# Optional: custom instruction for the commit summarizer.
+# Leave empty to use the built-in default prompt.
+# For multi-line prompts, use TOML triple-quoted strings:
+# summarizer_instruction = """Summarize commits with:
+# - short title
+# - bullet points for changes
+# - imperative mood
+# """
+summarizer_instruction = ""
 
 [[model]]
 provider_id = "openrouter"
