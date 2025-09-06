@@ -163,12 +163,7 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	welcomeMessage := fmt.Sprintf("```\nOpenCode Session Started\nRepository: %s\nModel: %s\nWorktree Path: `%s`\nSession ID: %s\n```",
 		repository.Name, model.ProviderID+"/"+model.ModelID, trimmedWorktreeDir, trimmedSessionID)
 
-	_, err = s.ChannelMessageSend(thread.ID, welcomeMessage)
-	if err != nil {
-		slog.Error("failed to send welcome message", "thread_id", thread.ID, "error", err)
-	} else {
-		slog.Debug("welcome message sent successfully", "thread_id", thread.ID)
-	}
+	SendDiscordMessage(thread.ID, welcomeMessage)
 
 	// Update the interaction response with success message AFTER welcome message
 	slog.Debug("updating interaction response", "thread_id", thread.ID)
@@ -428,12 +423,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s\n\n**Git Push Output:**\n```\n%s\n```",
 		summary, commitHash, currentBranch, strings.TrimSpace(string(pushOutput)))
 
-	_, err = s.ChannelMessageSend(threadID, detailedMessage)
-	if err != nil {
-		slog.Error("failed to send detailed success message", "thread_id", threadID, "error", err)
-	} else {
-		slog.Debug("detailed success message sent to thread", "thread_id", threadID)
-	}
+	SendDiscordMessage(threadID, detailedMessage)
 
 	// Update interaction response
 	slog.Debug("updating interaction response with success", "thread_id", threadID)
