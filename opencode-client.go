@@ -390,7 +390,7 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 				}
 			case PartTypeText:
 				if part.Text != "" {
-					discordMessage = removeExcessiveNewLine(part.Text)
+					discordMessage = fmt.Sprintf("> %s", removeExcessiveNewLine(part.Text))
 				}
 			}
 
