@@ -2,6 +2,16 @@ bot_token = ""
 opencode_port = 5000
 log_level = "debug"
 
+# Optional: custom instruction for the commit summarizer.
+# Leave empty to use the built-in default prompt.
+# For multi-line prompts, use TOML triple-quoted strings:
+# summarizer_instruction = """Summarize commits with:
+# - short title
+# - bullet points for changes
+# - imperative mood
+# """
+summarizer_instruction = ""
+
 [[model]]
 provider_id = "openrouter"
 model_id = "z-ai/glm-4.5"
