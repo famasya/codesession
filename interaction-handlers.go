@@ -218,13 +218,17 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	// send message to opencode to generate commit summary
 	slog.Debug("requesting AI summary for commit", "thread_id", threadID, "session_id", session.SessionID)
+	instruction := AppConfig.SummarizerInstruction
+	if instruction == "" {
+		instruction = "Summarize current session messages into a single concise summary for git commit messages under 50 characters. Do not exceed the limit, prefer brevity over detail."
+	}
 	client := Opencode()
 	response, err := client.Session.Prompt(context.Background(), session.SessionID, opencode.SessionPromptParams{
 		Directory: opencode.F(worktreePath),
 		Parts: opencode.F([]opencode.SessionPromptParamsPartUnion{
 			&opencode.TextPartInputParam{
 				Type: opencode.F(opencode.TextPartInputTypeText),
-				Text: opencode.F("Summarize current session messages into a single concise summary for git commit messages under 50 characters. Do not exceed the limit, prefer brevity over detail."),
+				Text: opencode.F(instruction),
 			},
 		}),
 		Model: opencode.F(opencode.SessionPromptParamsModel{

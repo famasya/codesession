@@ -1,6 +1,7 @@
 bot_token = ""
 opencode_port = 5000
 log_level = "debug"
+summarizer_instruction = "Summarize current session messages into a single concise summary for git commit messages under 50 characters. Do not exceed the limit, prefer brevity over detail."
 
 [[model]]
 provider_id = "openrouter"
