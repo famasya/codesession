@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -177,12 +178,43 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	})
 }
 
+
 func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	threadID := i.ChannelID
-	slog.Debug("starting commit command", "thread_id", threadID)
+	channelID := i.ChannelID
+	slog.Debug("starting commit command", "channel_id", channelID)
+
+	// Get channel info to check if it's a thread
+	channel, err := s.Channel(channelID)
+	if err != nil {
+		slog.Error("failed to get channel info", "channel_id", channelID, "error", err)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Failed to get channel information.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	// Check if command is executed in a thread
+	if channel.Type != discordgo.ChannelTypeGuildPublicThread && channel.Type != discordgo.ChannelTypeGuildPrivateThread {
+		slog.Debug("commit command executed outside thread", "channel_id", channelID, "channel_type", channel.Type)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "The `/commit` command can only be used within a codesession thread. Please use this command in a thread created by the `/opencode` command.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	threadID := channelID
+	slog.Debug("commit command in thread", "thread_id", threadID)
 
 	// Defer response
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
 	if err != nil {
@@ -422,11 +454,35 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		slog.Debug("saved session data with success status", "thread_id", threadID, "commit_hash", commitHash)
 	}
 
+	// Extract PR link from git push output using regex
+	var prLink string
+	pushOutputStr := string(pushOutput)
+	// Regex to match PR URLs in git push output (works for GitHub, GitLab, etc.)
+	prRegex := regexp.MustCompile(`https://[^\s]+/(?:pull|merge_requests)/[^\s]+|https://[^\s]+/pull/[^\s]+`)
+	if matches := prRegex.FindStringSubmatch(pushOutputStr); len(matches) > 0 {
+		prLink = matches[0]
+		slog.Debug("extracted PR link from push output", "thread_id", threadID, "pr_link", prLink)
+	} else {
+		// Fallback: try to extract any HTTPS URL that might be a PR link
+		urlRegex := regexp.MustCompile(`https://[^\s]+`)
+		if matches := urlRegex.FindStringSubmatch(pushOutputStr); len(matches) > 0 {
+			prLink = matches[0]
+			slog.Debug("extracted generic URL from push output", "thread_id", threadID, "url", prLink)
+		}
+	}
+
 	// Send detailed success message to thread with git push output
 	slog.Debug("preparing detailed success message", "thread_id", threadID)
 	slog.Debug("sending detailed success message to thread", "thread_id", threadID)
-	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s\n\n**Git Push Output:**\n```\n%s\n```",
-		summary, commitHash, currentBranch, strings.TrimSpace(string(pushOutput)))
+
+	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s",
+		summary, commitHash, currentBranch)
+
+	if prLink != "" {
+		detailedMessage += fmt.Sprintf("\n\n**Pull Request:** %s", prLink)
+	}
+
+	detailedMessage += fmt.Sprintf("\n\n**Git Push Output:**\n```\n%s\n```", strings.TrimSpace(string(pushOutput)))
 
 	_, err = s.ChannelMessageSend(threadID, detailedMessage)
 	if err != nil {
