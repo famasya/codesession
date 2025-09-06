@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
@@ -153,4 +154,29 @@ func repositoryList() ([]Repository, error) {
 	}
 
 	return repositoryList, nil
+}
+
+const limit = 2000
+
+// send message to discord and chunk if necessarry
+func SendDiscordMessage(threadID string, message string) {
+	remaining := message
+	for len(remaining) > 0 {
+		chunk := remaining
+		if len(chunk) > limit {
+			split := strings.LastIndex(chunk[:limit], "\n")
+			if split <= 0 {
+				split = limit
+			}
+			chunk = remaining[:split]
+			remaining = strings.TrimPrefix(remaining[split:], "\n")
+		} else {
+			remaining = ""
+		}
+		if _, err := discord.ChannelMessageSend(threadID, chunk); err != nil {
+			slog.Error("failed to send message to discord", "thread_id", threadID, "error", err)
+			break
+		}
+		slog.Debug("sent message chunk to discord", "thread_id", threadID, "chunk_len", len(chunk))
+	}
 }
