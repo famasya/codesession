@@ -1,4 +1,4 @@
-module discord-opencode
+module codesession
 
 go 1.24.1
 

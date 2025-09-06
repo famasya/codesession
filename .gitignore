@@ -1,4 +1,5 @@
 tmp/*
+codesession
 discord-opencode
 .claude/settings.local.json
 .sessions/*
