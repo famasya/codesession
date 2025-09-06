@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -177,35 +178,6 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	})
 }
 
-// constructPRLink parses the remote URL and constructs a PR link for the given branch
-func constructRepoLink(remoteURL string) string {
-	// Remove .git suffix if present
-	remoteURL = strings.TrimSuffix(remoteURL, ".git")
-
-	// Convert SSH format to HTTPS format
-	if strings.HasPrefix(remoteURL, "git@") {
-		// SSH format: git@github.com:user/repo -> https://github.com/user/repo
-		if strings.Contains(remoteURL, "github.com") {
-			repoPath := strings.TrimPrefix(remoteURL, "git@github.com:")
-			repoPath = strings.Replace(repoPath, ":", "/", 1)
-			return fmt.Sprintf("https://github.com/%s", repoPath)
-		} else if strings.Contains(remoteURL, "gitlab.com") {
-			repoPath := strings.TrimPrefix(remoteURL, "git@gitlab.com:")
-			repoPath = strings.Replace(repoPath, ":", "/", 1)
-			return fmt.Sprintf("https://gitlab.com/%s", repoPath)
-		} else if strings.Contains(remoteURL, "bitbucket.org") {
-			repoPath := strings.TrimPrefix(remoteURL, "git@bitbucket.org:")
-			repoPath = strings.Replace(repoPath, ":", "/", 1)
-			return fmt.Sprintf("https://bitbucket.org/%s", repoPath)
-		}
-	} else if strings.HasPrefix(remoteURL, "https://") {
-		// Already HTTPS format, return as-is
-		return remoteURL
-	}
-
-	// If we can't parse the URL, return empty string
-	return ""
-}
 
 func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	channelID := i.ChannelID
@@ -482,21 +454,21 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		slog.Debug("saved session data with success status", "thread_id", threadID, "commit_hash", commitHash)
 	}
 
-	// Get repository link if available
-	var repoLink string
-	remoteCmd := exec.Command("git", "remote", "get-url", "origin")
-	remoteCmd.Dir = worktreePath
-	if remoteOutput, err := remoteCmd.CombinedOutput(); err == nil {
-		remoteURL := strings.TrimSpace(string(remoteOutput))
-		slog.Debug("got remote URL", "thread_id", threadID, "remote_url", remoteURL)
-
-		// Parse remote URL to extract repository link
-		if repoURL := constructRepoLink(remoteURL); repoURL != "" {
-			repoLink = repoURL
-			slog.Debug("extracted repository link", "thread_id", threadID, "repo_link", repoLink)
-		}
+	// Extract PR link from git push output using regex
+	var prLink string
+	pushOutputStr := string(pushOutput)
+	// Regex to match PR URLs in git push output (works for GitHub, GitLab, etc.)
+	prRegex := regexp.MustCompile(`https://[^\s]+/(?:pull|merge_requests)/[^\s]+|https://[^\s]+/pull/[^\s]+`)
+	if matches := prRegex.FindStringSubmatch(pushOutputStr); len(matches) > 0 {
+		prLink = matches[0]
+		slog.Debug("extracted PR link from push output", "thread_id", threadID, "pr_link", prLink)
 	} else {
-		slog.Debug("failed to get remote URL", "thread_id", threadID, "error", err)
+		// Fallback: try to extract any HTTPS URL that might be a PR link
+		urlRegex := regexp.MustCompile(`https://[^\s]+`)
+		if matches := urlRegex.FindStringSubmatch(pushOutputStr); len(matches) > 0 {
+			prLink = matches[0]
+			slog.Debug("extracted generic URL from push output", "thread_id", threadID, "url", prLink)
+		}
 	}
 
 	// Send detailed success message to thread with git push output
@@ -506,8 +478,8 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s",
 		summary, commitHash, currentBranch)
 
-	if repoLink != "" {
-		detailedMessage += fmt.Sprintf("\n\n**Repository:** %s", repoLink)
+	if prLink != "" {
+		detailedMessage += fmt.Sprintf("\n\n**Pull Request:** %s", prLink)
 	}
 
 	detailedMessage += fmt.Sprintf("\n\n**Git Push Output:**\n```\n%s\n```", strings.TrimSpace(string(pushOutput)))
