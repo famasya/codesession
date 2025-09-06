@@ -220,7 +220,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	slog.Debug("requesting AI summary for commit", "thread_id", threadID, "session_id", session.SessionID)
 	instruction := AppConfig.SummarizerInstruction
 	if instruction == "" {
-		instruction = "Summarize current session messages into a single concise summary for git commit messages under 50 characters. Do not exceed the limit, prefer brevity over detail."
+		instruction = "Generate a git commit message in conventional commit format. The first line should be in the format 'type(scope): description'. Follow with a bullet-point list of key changes made in the session. Keep the entire message concise."
 	}
 	client := Opencode()
 	response, err := client.Session.Prompt(context.Background(), session.SessionID, opencode.SessionPromptParams{
