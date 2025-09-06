@@ -158,8 +158,16 @@ func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName s
 
 	// Create new session
 	ctx := context.Background()
+
+	// Get absolute path for session creation
+	absWorktreePath, err := filepath.Abs(worktreePath)
+	if err != nil {
+		slog.Error("failed to get absolute path for session creation", "error", err)
+		return nil
+	}
+
 	session, err := client.Session.New(ctx, opencode.SessionNewParams{
-		Directory: opencode.F(worktreePath),
+		Directory: opencode.F(absWorktreePath),
 	})
 	if err != nil {
 		slog.Error("failed to create session", "error", err)
@@ -172,7 +180,7 @@ func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName s
 		SessionID:      session.ID,
 		Session:        session,
 		Active:         true,
-		WorktreePath:   worktreePath,
+		WorktreePath:   absWorktreePath, // Store absolute path for consistency
 		RepositoryPath: repositoryPath,
 		RepositoryName: repositoryName,
 		CreatedAt:      time.Now(),
@@ -211,14 +219,35 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 
 	slog.Debug("sending message to session", "thread_id", threadID, "session_id", session.ID, "message", message, "worktree_path", worktreePath)
 
+	// Validate that the worktree path exists and is accessible
+	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+		slog.Error("worktree path does not exist", "thread_id", threadID, "worktree_path", worktreePath)
+		return nil
+	}
+
+	// Get absolute path to ensure OpenCode SDK gets the correct directory
+	absWorktreePath, err := filepath.Abs(worktreePath)
+	if err != nil {
+		slog.Error("failed to get absolute path for worktree", "thread_id", threadID, "worktree_path", worktreePath, "error", err)
+		return nil
+	}
+	slog.Debug("using absolute worktree path", "thread_id", threadID, "abs_worktree_path", absWorktreePath)
+
 	client := Opencode()
 	ctx := context.Background()
+
+	// Enhanced message with explicit worktree boundary instruction
+	enhancedMessage := fmt.Sprintf("IMPORTANT: You are working in an isolated git worktree at: %s\n"+
+		"You MUST only access files within this directory. Do not attempt to access files outside this worktree.\n"+
+		"All project files are available within this worktree directory.\n\n"+
+		"User request: %s", absWorktreePath, message)
+
 	response, err := client.Session.Prompt(ctx, session.ID, opencode.SessionPromptParams{
-		Directory: opencode.F(worktreePath),
+		Directory: opencode.F(absWorktreePath),
 		Parts: opencode.F([]opencode.SessionPromptParamsPartUnion{
 			&opencode.TextPartInputParam{
 				Type: opencode.F(opencode.TextPartInputTypeText),
-				Text: opencode.F(message),
+				Text: opencode.F(enhancedMessage),
 			},
 		}),
 		Model: opencode.F(opencode.SessionPromptParamsModel{
