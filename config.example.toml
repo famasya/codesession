@@ -1,7 +1,7 @@
 bot_token = ""
 opencode_port = 5000
 log_level = "debug"
-summarizer_instruction = ""
+summarizer_instruction = "Generate a git commit message in conventional commit format. The first line should be in the format 'type(scope): description'. Follow with a bullet-point list of key changes made in the session. Keep the entire message concise."
 
 [[model]]
 provider_id = "openrouter"
