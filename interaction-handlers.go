@@ -178,11 +178,41 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 }
 
 func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	threadID := i.ChannelID
-	slog.Debug("starting commit command", "thread_id", threadID)
+	channelID := i.ChannelID
+	slog.Debug("starting commit command", "channel_id", channelID)
+
+	// Get channel info to check if it's a thread
+	channel, err := s.Channel(channelID)
+	if err != nil {
+		slog.Error("failed to get channel info", "channel_id", channelID, "error", err)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Failed to get channel information.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	// Check if command is executed in a thread
+	if channel.Type != discordgo.ChannelTypeGuildPublicThread && channel.Type != discordgo.ChannelTypeGuildPrivateThread {
+		slog.Debug("commit command executed outside thread", "channel_id", channelID, "channel_type", channel.Type)
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "The `/commit` command can only be used within a codesession thread. Please use this command in a thread created by the `/opencode` command.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	threadID := channelID
+	slog.Debug("commit command in thread", "thread_id", threadID)
 
 	// Defer response
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
 	if err != nil {
