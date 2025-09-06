@@ -177,6 +177,39 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	})
 }
 
+// constructPRLink parses the remote URL and constructs a PR link for the given branch
+func constructPRLink(remoteURL, branch string) string {
+	// Remove .git suffix if present
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+
+	// Handle different URL formats
+	var repoPath string
+	if strings.HasPrefix(remoteURL, "https://") {
+		// HTTPS format: https://github.com/user/repo
+		if strings.Contains(remoteURL, "github.com") {
+			repoPath = strings.TrimPrefix(remoteURL, "https://github.com/")
+			return fmt.Sprintf("https://github.com/%s/compare/%s?expand=1", repoPath, branch)
+		} else if strings.Contains(remoteURL, "gitlab.com") {
+			repoPath = strings.TrimPrefix(remoteURL, "https://gitlab.com/")
+			return fmt.Sprintf("https://gitlab.com/%s/-/merge_requests/new?merge_request[source_branch]=%s", repoPath, branch)
+		}
+	} else if strings.HasPrefix(remoteURL, "git@") {
+		// SSH format: git@github.com:user/repo.git
+		if strings.Contains(remoteURL, "github.com") {
+			repoPath = strings.TrimPrefix(remoteURL, "git@github.com:")
+			repoPath = strings.Replace(repoPath, ":", "/", 1)
+			return fmt.Sprintf("https://github.com/%s/compare/%s?expand=1", repoPath, branch)
+		} else if strings.Contains(remoteURL, "gitlab.com") {
+			repoPath = strings.TrimPrefix(remoteURL, "git@gitlab.com:")
+			repoPath = strings.Replace(repoPath, ":", "/", 1)
+			return fmt.Sprintf("https://gitlab.com/%s/-/merge_requests/new?merge_request[source_branch]=%s", repoPath, branch)
+		}
+	}
+
+	// If we can't determine the hosting service, return empty string
+	return ""
+}
+
 func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	channelID := i.ChannelID
 	slog.Debug("starting commit command", "channel_id", channelID)
@@ -452,11 +485,35 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		slog.Debug("saved session data with success status", "thread_id", threadID, "commit_hash", commitHash)
 	}
 
+	// Get PR/MR link if available
+	var prLink string
+	remoteCmd := exec.Command("git", "remote", "get-url", "origin")
+	remoteCmd.Dir = worktreePath
+	if remoteOutput, err := remoteCmd.CombinedOutput(); err == nil {
+		remoteURL := strings.TrimSpace(string(remoteOutput))
+		slog.Debug("got remote URL", "thread_id", threadID, "remote_url", remoteURL)
+
+		// Parse remote URL to extract repository info and construct PR link
+		if prURL := constructPRLink(remoteURL, currentBranch); prURL != "" {
+			prLink = prURL
+			slog.Debug("constructed PR link", "thread_id", threadID, "pr_link", prLink)
+		}
+	} else {
+		slog.Debug("failed to get remote URL", "thread_id", threadID, "error", err)
+	}
+
 	// Send detailed success message to thread with git push output
 	slog.Debug("preparing detailed success message", "thread_id", threadID)
 	slog.Debug("sending detailed success message to thread", "thread_id", threadID)
-	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s\n\n**Git Push Output:**\n```\n%s\n```",
-		summary, commitHash, currentBranch, strings.TrimSpace(string(pushOutput)))
+
+	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s",
+		summary, commitHash, currentBranch)
+
+	if prLink != "" {
+		detailedMessage += fmt.Sprintf("\n\n**Pull Request:** %s", prLink)
+	}
+
+	detailedMessage += fmt.Sprintf("\n\n**Git Push Output:**\n```\n%s\n```", strings.TrimSpace(string(pushOutput)))
 
 	_, err = s.ChannelMessageSend(threadID, detailedMessage)
 	if err != nil {
