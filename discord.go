@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -57,7 +58,7 @@ func RunDiscordBot(ctx context.Context, wg *sync.WaitGroup) {
 
 	// wait for ctx to be canceled
 	<-ctx.Done()
-	
+
 	// Stop all active listeners before closing discord
 	stopAllActiveListeners()
 	discord.Close()
@@ -81,7 +82,7 @@ func registerCommands(s *discordgo.Session) error {
 	}
 	for i, model := range AppConfig.Models {
 		modelChoices = append(modelChoices, &discordgo.ApplicationCommandOptionChoice{
-			Name:  model,
+			Name:  fmt.Sprintf("%s:%s", model.ProviderID, model.ModelID),
 			Value: i,
 		})
 	}
@@ -90,6 +91,10 @@ func registerCommands(s *discordgo.Session) error {
 		{
 			Name:        "ping",
 			Description: "Will reply you back",
+		},
+		{
+			Name:        "commit",
+			Description: "Generate commit message push changes",
 		},
 		{
 			Name:        "opencode",

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sst/opencode-sdk-go" // imported as opencode
 	"github.com/sst/opencode-sdk-go/option"
@@ -20,11 +21,26 @@ var opencodeClient *opencode.Client
 var worktreesDirectory string
 var sessionsDirectory string
 
+type CommitRecord struct {
+	Hash      string    `json:"hash"`
+	Summary   string    `json:"summary"`
+	Timestamp time.Time `json:"timestamp"`
+	Status    string    `json:"status"` // "success", "failed", "pending"
+}
+
 type SessionData struct {
-	ThreadID  string            `json:"thread_id"`
-	SessionID string            `json:"session_id"`
-	Session   *opencode.Session `json:"-"` // Don't serialize the session object
-	Active    bool              `json:"-"` // Don't serialize the active state
+	ThreadID       string         `json:"thread_id"`
+	SessionID      string         `json:"session_id"`
+	Model          Model          `json:"model"`
+	WorktreePath   string         `json:"worktree_path"`
+	RepositoryPath string         `json:"repository_path"`
+	RepositoryName string         `json:"repository_name"`
+	CreatedAt      time.Time      `json:"created_at"`
+	Commits        []CommitRecord `json:"commits"`
+
+	// Non-serialized runtime fields
+	Session *opencode.Session `json:"-"` // Don't serialize the session object
+	Active  bool              `json:"-"` // Don't serialize the active state
 }
 
 var sessionCache = make(map[string]*SessionData)
@@ -126,7 +142,7 @@ func saveSessionData(sessionData *SessionData) error {
 }
 
 // get or create session for thread
-func GetOrCreateSession(threadID, worktreePath string) *opencode.Session {
+func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName string) *opencode.Session {
 	client := Opencode()
 
 	// Try to lazy load session first
@@ -152,10 +168,15 @@ func GetOrCreateSession(threadID, worktreePath string) *opencode.Session {
 
 	// Cache session with active state and save session data
 	sessionData = &SessionData{
-		ThreadID:  threadID,
-		SessionID: session.ID,
-		Session:   session,
-		Active:    true,
+		ThreadID:       threadID,
+		SessionID:      session.ID,
+		Session:        session,
+		Active:         true,
+		WorktreePath:   worktreePath,
+		RepositoryPath: repositoryPath,
+		RepositoryName: repositoryName,
+		CreatedAt:      time.Now(),
+		Commits:        make([]CommitRecord, 0),
 	}
 	sessionMutex.Lock()
 	sessionCache[threadID] = sessionData
@@ -171,15 +192,27 @@ func GetOrCreateSession(threadID, worktreePath string) *opencode.Session {
 
 // send message to session
 func SendMessage(threadID string, message string) *opencode.SessionPromptResponse {
-	session := GetOrCreateSession(threadID, fmt.Sprintf("%s/%s", worktreesDirectory, threadID))
-	if session == nil {
+	sessionMutex.RLock()
+	sessionData, exists := sessionCache[threadID]
+	sessionMutex.RUnlock()
+	if !exists {
 		return nil
 	}
 
+	// Use the session's stored worktree path and existing session
+	model := sessionData.Model
+	session := sessionData.Session
+	worktreePath := sessionData.WorktreePath
+
+	if session == nil {
+		slog.Error("session object is nil for thread", "thread_id", threadID)
+		return nil
+	}
+
+	slog.Debug("sending message to session", "thread_id", threadID, "session_id", session.ID, "message", message, "worktree_path", worktreePath)
+
 	client := Opencode()
 	ctx := context.Background()
-	worktreePath := fmt.Sprintf("%s/%s", worktreesDirectory, threadID)
-	slog.Debug("sending message to session", "thread_id", threadID, "session_id", session.ID, "message", message, "worktree_path", worktreePath)
 	response, err := client.Session.Prompt(ctx, session.ID, opencode.SessionPromptParams{
 		Directory: opencode.F(worktreePath),
 		Parts: opencode.F([]opencode.SessionPromptParamsPartUnion{
@@ -189,8 +222,8 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 			},
 		}),
 		Model: opencode.F(opencode.SessionPromptParamsModel{
-			ProviderID: opencode.F("opencode"),  // change this later
-			ModelID:    opencode.F("grok-code"), // change this later
+			ProviderID: opencode.F(model.ProviderID),
+			ModelID:    opencode.F(model.ModelID),
 		}),
 	})
 	if err != nil {
@@ -269,8 +302,16 @@ func IsSessionActiveBySessionID(sessionID string) bool {
 }
 
 func CleanupWorktree(threadID string) error {
-	// cleanup using git commands
-	cmd := exec.Command("git", "worktree", "remove", fmt.Sprintf("%s/%s", worktreesDirectory, threadID))
+	// Get session data to find the actual worktree path
+	sessionData := lazyLoadSession(threadID)
+	if sessionData == nil {
+		// Fallback to old path construction if session not found
+		cmd := exec.Command("git", "worktree", "remove", fmt.Sprintf("%s/%s", worktreesDirectory, threadID))
+		return cmd.Run()
+	}
+
+	// Use stored worktree path for cleanup
+	cmd := exec.Command("git", "worktree", "remove", sessionData.WorktreePath)
 	return cmd.Run()
 }
 
@@ -290,7 +331,8 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 		return
 	}
 
-	worktreePath := fmt.Sprintf("%s/%s", worktreesDirectory, threadID)
+	// Use stored worktree path from session data
+	worktreePath := sessionData.WorktreePath
 	client := Opencode()
 	stream := client.Event.ListStreaming(ctx, opencode.EventListParams{
 		Directory: opencode.F(worktreePath),
@@ -390,7 +432,6 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 
 func serializeEvent[T any](event *opencode.EventListResponse) *T {
 	var data T
-	slog.Debug("serializing event", "event", event.JSON.Properties.Raw())
 	err := json.Unmarshal([]byte(event.JSON.Properties.Raw()), &data)
 	if err != nil {
 		slog.Error("failed to serialize event to json", "error", err)

@@ -11,13 +11,18 @@ type Config struct {
 	BotToken     string       `toml:"bot_token"`
 	OpencodePort int          `toml:"opencode_port"`
 	LogLevel     string       `toml:"log_level"`
-	Repositories []Repository `toml:"repository"`
-	Models       []string     `toml:"models"`
+	Repositories []Repository `toml:"repositories"`
+	Models       []Model      `toml:"models"`
 }
 
 type Repository struct {
 	Path string `toml:"path"`
 	Name string `toml:"name"`
+}
+
+type Model struct {
+	ProviderID string `toml:"provider_id"`
+	ModelID    string `toml:"model_id"`
 }
 
 var AppConfig Config
