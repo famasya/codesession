@@ -413,7 +413,7 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 				}
 			case PartTypeReasoning:
 				if part.Text != "" {
-					// remove markdown formatting and wrap in blockquote
+					// remove markdown formatting, normalize spacing, and wrap in blockquote
 					cleanText := removeMarkdownFormatting(part.Text)
 					discordMessage = fmt.Sprintf("> %s", cleanText)
 				}
