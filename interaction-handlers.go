@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,6 +35,10 @@ func InteractionHandlers(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	if command == "commit" {
 		handleCommitCommand(s, i)
+	}
+
+	if command == "diff" {
+		handleDiffCommand(s, i)
 	}
 }
 
@@ -107,11 +110,9 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	}
 
 	// Create git worktree FIRST
-	cmd := exec.Command("git", "worktree", "add", worktreeDir)
-	cmd.Dir = currentDir
-	output, err := cmd.CombinedOutput()
+	err = gitOps.CreateWorktree(currentDir, worktreeDir)
 	if err != nil {
-		slog.Error("failed to create git worktree", "error", err, "output", string(output))
+		slog.Error("failed to create git worktree", "error", err)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: &[]string{"Failed to create git worktree"}[0],
 		})
@@ -159,9 +160,13 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	// Send initial message to the thread
 	slog.Debug("sending welcome message to thread", "thread_id", thread.ID)
 	trimmedWorktreeDir := strings.TrimPrefix(worktreeDir, repository.Path)
-	trimmedSessionID := session.ID[len(session.ID)-8:]
-	welcomeMessage := fmt.Sprintf("```\nOpenCode Session Started\nRepository: %s\nModel: %s\nWorktree Path: `%s`\nSession ID: %s\n```",
-		repository.Name, model.ProviderID+"/"+model.ModelID, trimmedWorktreeDir, trimmedSessionID)
+	welcomeMessage := fmt.Sprintf(`%s
+OpenCode Session Started
+Repository: %s
+Model: %s
+Worktree Path: %s
+Session ID: %s
+%s`, "```", repository.Name, fmt.Sprintf("%s/%s", model.ProviderID, model.ModelID), trimmedWorktreeDir, session.ID, "```")
 
 	SendDiscordMessage(thread.ID, welcomeMessage)
 
@@ -281,14 +286,13 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	// Check git status before adding
 	slog.Debug("checking git status before staging", "thread_id", threadID)
-	statusCmd := exec.Command("git", "status", "--porcelain")
-	statusCmd.Dir = worktreePath
-	statusOutput, err := statusCmd.CombinedOutput()
+	gitStatus, err := gitOps.GetStatus(worktreePath)
 	if err != nil {
-		slog.Error("failed to check git status", "thread_id", threadID, "error", err, "output", string(statusOutput))
+		slog.Error("failed to check git status", "thread_id", threadID, "error", err)
 	} else {
-		slog.Debug("git status output", "thread_id", threadID, "status", string(statusOutput))
-		if len(strings.TrimSpace(string(statusOutput))) == 0 {
+		slog.Debug("git status retrieved", "thread_id", threadID, "is_clean", gitStatus.IsClean,
+			"modified_count", len(gitStatus.ModifiedFiles), "untracked_count", len(gitStatus.UntrackedFiles))
+		if gitStatus.IsClean {
 			slog.Debug("no changes detected in worktree", "thread_id", threadID)
 
 			// Update commit record with "no changes" status
@@ -312,25 +316,21 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	// Git add operation
 	slog.Debug("staging all changes", "thread_id", threadID)
-	cmd := exec.Command("git", "add", ".")
-	cmd.Dir = worktreePath
-	addOutput, err := cmd.CombinedOutput()
+	err = gitOps.AddAll(worktreePath)
 	if err != nil {
-		slog.Error("failed to git add", "thread_id", threadID, "error", err, "output", string(addOutput))
+		slog.Error("failed to stage changes", "thread_id", threadID, "error", err)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: &[]string{"Failed to stage changes."}[0],
 		})
 		return
 	}
-	slog.Debug("git add completed successfully", "thread_id", threadID, "output", string(addOutput))
+	slog.Debug("all changes staged successfully", "thread_id", threadID)
 
 	// Git commit operation
 	slog.Debug("committing changes", "thread_id", threadID, "commit_message", summary)
-	cmd = exec.Command("git", "commit", "-m", summary)
-	cmd.Dir = worktreePath
-	commitOutput, err := cmd.CombinedOutput()
+	commitHash, err := gitOps.Commit(worktreePath, summary)
 	if err != nil {
-		slog.Error("failed to git commit", "thread_id", threadID, "error", err, "output", string(commitOutput))
+		slog.Error("failed to create commit", "thread_id", threadID, "error", err)
 
 		// Update commit record with failed status
 		sessionMutex.Lock()
@@ -349,36 +349,21 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 		return
 	}
-	slog.Debug("git commit completed successfully", "thread_id", threadID, "output", string(commitOutput))
-
-	// Get commit hash for logging
-	var commitHash string
-	hashCmd := exec.Command("git", "rev-parse", "HEAD")
-	hashCmd.Dir = worktreePath
-	if hashOutput, err := hashCmd.CombinedOutput(); err == nil {
-		commitHash = strings.TrimSpace(string(hashOutput))
-		slog.Debug("commit hash", "thread_id", threadID, "commit_hash", commitHash)
-	}
+	slog.Debug("commit created successfully", "thread_id", threadID, "commit_hash", commitHash)
 
 	// Check current branch before push
-	var currentBranch string
-	branchCmd := exec.Command("git", "branch", "--show-current")
-	branchCmd.Dir = worktreePath
-	if branchOutput, err := branchCmd.CombinedOutput(); err == nil {
-		currentBranch = strings.TrimSpace(string(branchOutput))
-		slog.Debug("current branch", "thread_id", threadID, "branch", currentBranch)
-	} else {
+	currentBranch, err := gitOps.GetCurrentBranch(worktreePath)
+	if err != nil {
 		slog.Error("failed to get current branch", "thread_id", threadID, "error", err)
 		currentBranch = "main" // fallback to main branch
 	}
+	slog.Debug("current branch", "thread_id", threadID, "branch", currentBranch)
 
 	// Git push operation with specific branch
 	slog.Debug("pushing changes to remote", "thread_id", threadID, "branch", currentBranch)
-	cmd = exec.Command("git", "push", "origin", currentBranch)
-	cmd.Dir = worktreePath
-	pushOutput, err := cmd.CombinedOutput()
+	err = gitOps.Push(worktreePath, currentBranch)
 	if err != nil {
-		slog.Error("failed to git push", "thread_id", threadID, "error", err, "output", string(pushOutput))
+		slog.Error("failed to push changes", "thread_id", threadID, "error", err)
 
 		// Update commit record with failed status (commit succeeded but push failed)
 		sessionMutex.Lock()
@@ -398,7 +383,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 		return
 	}
-	slog.Debug("git push completed successfully", "thread_id", threadID, "output", string(pushOutput))
+	slog.Debug("push completed successfully", "thread_id", threadID)
 
 	// Update commit record with success status
 	sessionMutex.Lock()
@@ -417,11 +402,11 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		slog.Debug("saved session data with success status", "thread_id", threadID, "commit_hash", commitHash)
 	}
 
-	// Send detailed success message to thread with git push output
+	// Send detailed success message to thread
 	slog.Debug("preparing detailed success message", "thread_id", threadID)
 	slog.Debug("sending detailed success message to thread", "thread_id", threadID)
-	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s\n\n**Git Push Output:**\n```\n%s\n```",
-		summary, commitHash, currentBranch, strings.TrimSpace(string(pushOutput)))
+	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s",
+		summary, commitHash, currentBranch)
 
 	SendDiscordMessage(threadID, detailedMessage)
 
@@ -509,4 +494,70 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, "Failed to send message to OpenCode.")
 		return
 	}
+}
+
+func handleDiffCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	threadID := i.ChannelID
+	slog.Debug("starting diff command", "thread_id", threadID)
+
+	// Defer response
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+	if err != nil {
+		slog.Error("failed to defer diff interaction", "thread_id", threadID, "error", err)
+		return
+	}
+	slog.Debug("diff interaction deferred successfully", "thread_id", threadID)
+
+	// Check if session exists
+	slog.Debug("attempting to load session", "thread_id", threadID)
+	session := lazyLoadSession(threadID)
+	if session == nil {
+		slog.Error("no session found for thread", "thread_id", threadID)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &[]string{"No OpenCode session found for this thread. Please start a session first using `/opencode` command."}[0],
+		})
+		return
+	}
+	slog.Debug("session loaded successfully", "thread_id", threadID, "session_id", session.SessionID)
+
+	// Use the stored worktree path from session data
+	worktreePath := session.WorktreePath
+	slog.Debug("using stored worktree path", "thread_id", threadID, "worktree_path", worktreePath, "repository_path", session.RepositoryPath, "repository_name", session.RepositoryName)
+
+	// Validate worktree directory exists
+	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+		slog.Error("worktree directory does not exist", "thread_id", threadID, "worktree_path", worktreePath)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &[]string{"Worktree directory not found. Please start a new session."}[0],
+		})
+		return
+	}
+	slog.Debug("worktree directory exists", "thread_id", threadID, "worktree_path", worktreePath)
+
+	// Get diff
+	slog.Debug("generating diff", "thread_id", threadID)
+	diffOutput, err := gitOps.GetDiff(worktreePath)
+	if err != nil {
+		slog.Error("failed to generate diff", "thread_id", threadID, "error", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &[]string{"Failed to generate diff."}[0],
+		})
+		return
+	}
+	slog.Debug("diff generated successfully", "thread_id", threadID, "diff_length", len(diffOutput))
+
+	// Send diff to thread using existing message chunking
+	slog.Debug("sending diff to thread", "thread_id", threadID)
+
+	// Update interaction response first
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content: &[]string{"Diff generated successfully:"}[0],
+	})
+
+	// Send the diff using the specialized SendDiscordDiffMessage function which handles chunking with code blocks
+	SendDiscordDiffMessage(threadID, diffOutput)
+
+	slog.Debug("diff command completed successfully", "thread_id", threadID)
 }

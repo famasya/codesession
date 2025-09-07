@@ -8,12 +8,12 @@ import (
 )
 
 type Config struct {
-	BotToken             string       `toml:"bot_token"`
-	OpencodePort         int          `toml:"opencode_port"`
-	LogLevel             string       `toml:"log_level"`
-	SummarizerInstruction string      `toml:"summarizer_instruction"`
-	Repositories         []Repository `toml:"repositories"`
-	Models               []Model      `toml:"models"`
+	BotToken              string       `toml:"bot_token"`
+	OpencodePort          int          `toml:"opencode_port"`
+	LogLevel              string       `toml:"log_level"`
+	SummarizerInstruction string       `toml:"summarizer_instruction"`
+	Repositories          []Repository `toml:"repositories"`
+	Models                []Model      `toml:"models"`
 }
 
 type Repository struct {

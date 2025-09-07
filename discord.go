@@ -98,6 +98,10 @@ func registerCommands(s *discordgo.Session) error {
 			Description: "Generate commit message push changes",
 		},
 		{
+			Name:        "diff",
+			Description: "Show diff of changes in current worktree",
+		},
+		{
 			Name:        "opencode",
 			Description: "Starting work with Opencode",
 			Type:        discordgo.ChatApplicationCommand,
@@ -156,17 +160,46 @@ func repositoryList() ([]Repository, error) {
 	return repositoryList, nil
 }
 
-const limit = 2000
-
 // send message to discord and chunk if necessarry
+const messageLimit = 2000
+
+// send diff message to discord with proper code block formatting for each chunk
+func SendDiscordDiffMessage(threadID string, diffOutput string) {
+	remaining := diffOutput
+	for len(remaining) > 0 {
+		chunk := remaining
+		// Account for code block wrapper length (```diff\n and \n```)
+		maxContent := messageLimit - 10
+		if len(chunk) > maxContent {
+			split := strings.LastIndex(chunk[:maxContent], "\n")
+			if split <= 0 {
+				split = maxContent
+			}
+			chunk = remaining[:split]
+			remaining = strings.TrimPrefix(remaining[split:], "\n")
+		} else {
+			remaining = ""
+		}
+		
+		// Wrap each chunk in diff code block
+		wrappedChunk := fmt.Sprintf("```diff\n%s\n```", chunk)
+		
+		if _, err := discord.ChannelMessageSend(threadID, wrappedChunk); err != nil {
+			slog.Error("failed to send diff message to discord", "thread_id", threadID, "error", err)
+			break
+		}
+		slog.Debug("sent diff chunk to discord", "thread_id", threadID, "chunk_len", len(wrappedChunk))
+	}
+}
+
 func SendDiscordMessage(threadID string, message string) {
 	remaining := message
 	for len(remaining) > 0 {
 		chunk := remaining
-		if len(chunk) > limit {
-			split := strings.LastIndex(chunk[:limit], "\n")
+		if len(chunk) > messageLimit {
+			split := strings.LastIndex(chunk[:messageLimit], "\n")
 			if split <= 0 {
-				split = limit
+				split = messageLimit
 			}
 			chunk = remaining[:split]
 			remaining = strings.TrimPrefix(remaining[split:], "\n")

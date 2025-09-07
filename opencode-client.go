@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -335,13 +334,12 @@ func CleanupWorktree(threadID string) error {
 	sessionData := lazyLoadSession(threadID)
 	if sessionData == nil {
 		// Fallback to old path construction if session not found
-		cmd := exec.Command("git", "worktree", "remove", fmt.Sprintf("%s/%s", worktreesDirectory, threadID))
-		return cmd.Run()
+		worktreePath := fmt.Sprintf("%s/%s", worktreesDirectory, threadID)
+		return gitOps.RemoveWorktree(worktreePath)
 	}
 
 	// Use stored worktree path for cleanup
-	cmd := exec.Command("git", "worktree", "remove", sessionData.WorktreePath)
-	return cmd.Run()
+	return gitOps.RemoveWorktree(sessionData.WorktreePath)
 }
 
 func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID string) {
@@ -413,8 +411,7 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 				}
 			case PartTypeReasoning:
 				if part.Text != "" {
-					// remove markdown formatting, normalize spacing, and wrap in blockquote
-					cleanText := removeMarkdownFormatting(part.Text)
+					cleanText := formatReasoning(part.Text)
 					discordMessage = fmt.Sprintf("> %s", cleanText)
 				}
 			case PartTypeText:
@@ -525,30 +522,17 @@ func spawnListenerIfNotExists(ctx context.Context, wg *sync.WaitGroup, threadID 
 	return true // New listener spawned
 }
 
-// removeMarkdownFormatting removes common markdown formatting from text
-func removeMarkdownFormatting(text string) string {
-	// Remove bold (**text** or __text__)
-	text = regexp.MustCompile(`\*\*(.*?)\*\*`).ReplaceAllString(text, "$1")
-	text = regexp.MustCompile(`__(.*?)__`).ReplaceAllString(text, "$1")
-
-	// Remove italic (*text* or _text_)
-	text = regexp.MustCompile(`\*(.*?)\*`).ReplaceAllString(text, "$1")
-	text = regexp.MustCompile(`_(.*?)_`).ReplaceAllString(text, "$1")
-
-	// Remove code blocks (```code``` and `code`)
-	text = regexp.MustCompile("```[\\s\\S]*?```").ReplaceAllString(text, "")
-	text = regexp.MustCompile("`(.*?)`").ReplaceAllString(text, "$1")
-
-	// Remove headers (# ## ### etc.)
-	text = regexp.MustCompile(`^#+\s*`).ReplaceAllString(text, "")
-
-	// Remove links [text](url)
-	text = regexp.MustCompile(`\[([^\]]*)\]\([^\)]*\)`).ReplaceAllString(text, "$1")
-
-	// Clean up extra whitespace
-	text = strings.TrimSpace(text)
-
-	return text
+// formatReasoning adds blockquote to reasoning text
+func formatReasoning(text string) string {
+	text = strings.TrimRight(text, "\n")
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line != "" { // skip blank lines
+			out = append(out, "> "+line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func removeExcessiveNewLine(text string) string {
