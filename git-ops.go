@@ -29,6 +29,18 @@ func NewGitOperations() *GitOperations {
 func (g *GitOperations) CreateWorktree(repoPath, worktreePath, branchName string) error {
 	slog.Debug("creating worktree", "repo_path", repoPath, "worktree_path", worktreePath, "branch", branchName)
 
+	// Reject empty branch names early
+	if branchName == "" {
+		return fmt.Errorf("branch name cannot be empty")
+	}
+
+	// Validate branch name
+	validate := exec.Command("git", "check-ref-format", "--branch", branchName)
+	validate.Dir = repoPath
+	if out, err := validate.CombinedOutput(); err != nil {
+		return fmt.Errorf("invalid branch name %q: %s", branchName, strings.TrimSpace(string(out)))
+	}
+
 	// Create the worktree directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0755); err != nil {
 		return fmt.Errorf("failed to create worktree parent directory: %w", err)
@@ -50,6 +62,12 @@ func (g *GitOperations) CreateWorktree(repoPath, worktreePath, branchName string
 // RemoveWorktree removes a git worktree at the specified path
 func (g *GitOperations) RemoveWorktree(repoPath, worktreePath string) error {
 	slog.Debug("removing worktree", "worktree_path", worktreePath)
+
+	// safety check: avoid to remove main/master
+	branch, _ := g.GetCurrentBranch(worktreePath)
+	if branch == "main" || branch == "master" || branch == "" {
+		return fmt.Errorf("not in a worktree. abort")
+	}
 
 	// First try to remove via git worktree remove
 	cmd := exec.Command("git", "worktree", "remove", worktreePath, "--force")
@@ -73,7 +91,7 @@ func (g *GitOperations) RemoveWorktree(repoPath, worktreePath string) error {
 func (g *GitOperations) GetStatus(worktreePath string) (*GitStatus, error) {
 	slog.Debug("getting git status", "worktree_path", worktreePath)
 
-	cmd := exec.Command("git", "status", "--porcelain")
+	cmd := exec.Command("git", "status", "--porcelain=v1 -z")
 	cmd.Dir = worktreePath
 
 	output, err := cmd.CombinedOutput()
@@ -219,20 +237,11 @@ func (g *GitOperations) GetCommitHash(worktreePath string) (string, error) {
 func (g *GitOperations) GetDiff(worktreePath string) (string, error) {
 	slog.Debug("getting git diff", "worktree_path", worktreePath)
 
-	// Pull origin first
-	cmd := exec.Command("git", "pull", "origin", "HEAD")
+	// Execute git diff in the worktree directory
+	cmd := exec.Command("git", "diff", "--minimal", "--ignore-all-space", "--diff-filter=ACMR")
 	cmd.Dir = worktreePath
 
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to pull origin: %s", string(output))
-	}
-
-	// Execute git diff in the worktree directory
-	cmd = exec.Command("git", "diff", "--minimal", "--ignore-all-space", "--diff-filter=ACMR")
-	cmd.Dir = worktreePath
-
-	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to execute git diff: %w", err)
 	}

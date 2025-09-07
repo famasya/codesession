@@ -7,3 +7,4 @@ discord-opencode
 !.sessions/.gitkeep
 !.worktrees/.gitkeep
 config.toml
+.mcp.json

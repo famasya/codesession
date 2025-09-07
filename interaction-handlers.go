@@ -98,8 +98,8 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	slog.Debug("thread created successfully", "thread_id", thread.ID, "thread_name", thread.Name)
 
 	// Create worktree directory in current repository
-	currentDir, _ := os.Getwd()
-	worktreeDir := filepath.Join(currentDir, ".worktrees", thread.ID)
+	repoPath := repository.Path
+	worktreeDir := filepath.Join(repoPath, ".worktrees", thread.ID)
 	err = os.MkdirAll(filepath.Dir(worktreeDir), 0755)
 	if err != nil {
 		slog.Error("failed to create worktrees directory", "error", err)
@@ -110,7 +110,7 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	}
 
 	// Create git worktree FIRST with branch name as thread ID
-	err = gitOps.CreateWorktree(currentDir, worktreeDir, thread.ID)
+	err = gitOps.CreateWorktree(repoPath, worktreeDir, thread.ID)
 	if err != nil {
 		slog.Error("failed to create git worktree", "error", err)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
