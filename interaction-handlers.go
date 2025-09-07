@@ -84,7 +84,7 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	slog.Debug("creating thread", "thread_name", threadName, "channel_id", i.ChannelID)
 	thread, err := s.ThreadStart(
 		i.ChannelID,
-		fmt.Sprintf("OpenCode: %s", threadName),
+		fmt.Sprintf("CodeSession: %s", threadName),
 		discordgo.ChannelTypeGuildPublicThread,
 		1440, // 24 hours
 	)
@@ -161,7 +161,7 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	slog.Debug("sending welcome message to thread", "thread_id", thread.ID)
 	trimmedWorktreeDir := strings.TrimPrefix(worktreeDir, repository.Path)
 	welcomeMessage := fmt.Sprintf(`%s
-OpenCode Session Started
+CodeSession Session Started
 Repository: %s
 Model: %s
 Worktree Path: %s
@@ -173,7 +173,7 @@ Session ID: %s
 	// Update the interaction response with success message AFTER welcome message
 	slog.Debug("updating interaction response", "thread_id", thread.ID)
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Content: &[]string{fmt.Sprintf("OpenCode session created successfully! Check the thread: %s", thread.Mention())}[0],
+		Content: &[]string{fmt.Sprintf("CodeSession session created successfully! Check the thread: %s", thread.Mention())}[0],
 	})
 }
 
@@ -197,7 +197,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if session == nil {
 		slog.Error("no session found for thread", "thread_id", threadID)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"No OpenCode session found for this thread. Please start a session first using `/opencode` command."}[0],
+			Content: &[]string{"No CodeSession session found for this thread. Please start a session first using `/opencode` command."}[0],
 		})
 		return
 	}
@@ -459,7 +459,7 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	slog.Debug("lazy loading session", "thread_id", threadID)
 	sessionData := lazyLoadSession(threadID)
 	if sessionData == nil {
-		s.ChannelMessageSend(m.ChannelID, "No OpenCode session found for this thread. Please start a session first using `/opencode` command.")
+		s.ChannelMessageSend(m.ChannelID, "No CodeSession session found for this thread. Please start a session first using `/opencode` command.")
 		return
 	}
 
@@ -477,7 +477,7 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	content = strings.TrimSpace(content)
 
 	if content == "" {
-		s.ChannelMessageSend(m.ChannelID, "Please provide a message to send to OpenCode.")
+		s.ChannelMessageSend(m.ChannelID, "Please provide a message to send to CodeSession.")
 		return
 	}
 
@@ -487,7 +487,7 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// send message to opencode
 	response := SendMessage(threadID, content)
 	if response == nil {
-		s.ChannelMessageSend(m.ChannelID, "Failed to send message to OpenCode.")
+		s.ChannelMessageSend(m.ChannelID, "Failed to send message to CodeSession.")
 		return
 	}
 }
@@ -512,7 +512,7 @@ func handleDiffCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if session == nil {
 		slog.Error("no session found for thread", "thread_id", threadID)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"No OpenCode session found for this thread. Please start a session first using `/opencode` command."}[0],
+			Content: &[]string{"No CodeSession session found for this thread. Please start a session first using `/opencode` command."}[0],
 		})
 		return
 	}

@@ -103,7 +103,7 @@ func registerCommands(s *discordgo.Session) error {
 		},
 		{
 			Name:        "opencode",
-			Description: "Starting work with Opencode",
+			Description: "Starting work with CodeSession",
 			Type:        discordgo.ChatApplicationCommand,
 			Options: []*discordgo.ApplicationCommandOption{
 				{
