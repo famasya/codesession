@@ -97,9 +97,17 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	}
 	slog.Debug("thread created successfully", "thread_id", thread.ID, "thread_name", thread.Name)
 
-	// Create worktree directory in current repository
+	// Create worktree directory in bot's current directory (not repository directory)
 	repoPath := repository.Path
-	worktreeDir := filepath.Join(repoPath, ".worktrees", thread.ID)
+	currentDir, err := os.Getwd()
+	if err != nil {
+		slog.Error("failed to get current working directory", "error", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &[]string{"Failed to get current working directory"}[0],
+		})
+		return
+	}
+	worktreeDir := filepath.Join(currentDir, ".worktrees", thread.ID)
 	err = os.MkdirAll(filepath.Dir(worktreeDir), 0755)
 	if err != nil {
 		slog.Error("failed to create worktrees directory", "error", err)
@@ -159,7 +167,7 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 
 	// Send initial message to the thread
 	slog.Debug("sending welcome message to thread", "thread_id", thread.ID)
-	trimmedWorktreeDir := strings.TrimPrefix(worktreeDir, repository.Path)
+	trimmedWorktreeDir := strings.TrimPrefix(worktreeDir, currentDir)
 	welcomeMessage := fmt.Sprintf(`%s
 OpenCode Session Started
 Repository: %s

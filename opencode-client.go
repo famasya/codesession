@@ -235,11 +235,8 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 	client := Opencode()
 	ctx := context.Background()
 
-	// Enhanced message with explicit worktree boundary instruction
-	enhancedMessage := fmt.Sprintf("IMPORTANT: You are working in an isolated git worktree at: %s\n"+
-		"You MUST only access files within this directory. Do not attempt to access files outside this worktree.\n"+
-		"All project files are available within this worktree directory.\n\n"+
-		"User request: %s", absWorktreePath, message)
+	// Enhanced message - just pass the user request without confusing path information
+	enhancedMessage := message
 
 	response, err := client.Session.Prompt(ctx, session.ID, opencode.SessionPromptParams{
 		Directory: opencode.F(absWorktreePath),
@@ -338,8 +335,9 @@ func CleanupWorktree(threadID string) error {
 		worktreePath = sessionData.WorktreePath
 	} else {
 		worktreePath = filepath.Join(worktreesDirectory, threadID)
-		// repo/.worktrees/<threadID> -> repo
-		repoPath = filepath.Dir(filepath.Dir(worktreePath))
+		// When we don't have session data, we can't determine the repo path
+		// This should not happen in normal operations since sessions store repo path
+		return fmt.Errorf("cannot determine repository path for cleanup without session data for thread %s", threadID)
 	}
 	return gitOps.RemoveWorktree(repoPath, worktreePath)
 }
