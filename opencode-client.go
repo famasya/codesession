@@ -330,16 +330,22 @@ func IsSessionActiveBySessionID(sessionID string) bool {
 }
 
 func CleanupWorktree(threadID string) error {
+	// Get current working directory as repo path
+	repoPath, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
 	// Get session data to find the actual worktree path
 	sessionData := lazyLoadSession(threadID)
 	if sessionData == nil {
 		// Fallback to old path construction if session not found
 		worktreePath := fmt.Sprintf("%s/%s", worktreesDirectory, threadID)
-		return gitOps.RemoveWorktree(worktreePath)
+		return gitOps.RemoveWorktree(repoPath, worktreePath)
 	}
 
 	// Use stored worktree path for cleanup
-	return gitOps.RemoveWorktree(sessionData.WorktreePath)
+	return gitOps.RemoveWorktree(repoPath, sessionData.WorktreePath)
 }
 
 func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID string) {
