@@ -1,22 +1,22 @@
 ## CodeSession - Agent Guidelines
 
-This is a Discord bot that integrates with OpenCode, allowing users to start AI coding sessions through Discord. The bot creates git worktrees for isolated development environments and manages OpenCode sessions for collaborative coding.
+This is a Discord bot that integrates with CodeSession, allowing users to start AI coding sessions through Discord. The bot creates git worktrees for isolated development environments and manages CodeSession sessions for collaborative coding.
 
 ## Architecture
 
 - **Main Components**:
   - `main.go`: Entry point that runs both Discord bot and OpenCode server concurrently
   - `discord.go`: Discord bot setup, slash command registration, and message handling
-  - `interaction-handlers.go`: Discord slash command handlers (`/ping`, `/opencode`, `/commit`)
+  - `interaction-handlers.go`: Discord slash command handlers (`/ping`, `/codesession`, `/commit`)
   - `opencode-server.go`: OpenCode server management and lifecycle
   - `opencode-client.go`: OpenCode client integration, session management, and event streaming
   - `opencode-event-types.go`: Type definitions for OpenCode event handling
   - `config.go`: TOML configuration loading and management
 
 - **Core Features**:
-  - Discord slash commands for starting OpenCode sessions
+  - Discord slash commands for starting CodeSession sessions
   - Git worktree creation for isolated development environments
-  - Real-time OpenCode event streaming to Discord threads
+  - Real-time CodeSession event streaming to Discord threads
   - Automatic commit generation with AI summaries
   - Session persistence and recovery
 
@@ -52,7 +52,7 @@ name = "repository_name"
 
 - Sessions are stored in `.sessions/` directory as JSON files
 - Worktrees are created in `.worktrees/` directory
-- Each Discord thread corresponds to one OpenCode session
+  - Each Discord thread corresponds to one CodeSession session
 - Sessions persist across bot restarts and can be lazy-loaded
 
 ## Key Dependencies
