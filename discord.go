@@ -88,41 +88,62 @@ func registerCommands(s *discordgo.Session) error {
 		})
 	}
 
-	commands := []*discordgo.ApplicationCommand{
-		{
-			Name:        "ping",
-			Description: "Will reply you back",
-		},
-		{
-			Name:        "commit",
-			Description: "Generate commit message push changes",
-		},
-		{
-			Name:        "diff",
-			Description: "Show diff of changes in current worktree",
-		},
-		{
-			Name:        "opencode",
-			Description: "Starting work with Opencode",
-			Type:        discordgo.ChatApplicationCommand,
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Name:        "repository",
-					Description: "Select repository",
-					Type:        discordgo.ApplicationCommandOptionInteger,
-					Required:    true,
-					Choices:     repositoryChoices,
-				},
-				{
-					Name:        "model",
-					Description: "Select model",
-					Type:        discordgo.ApplicationCommandOptionInteger,
-					Required:    true,
-					Choices:     modelChoices,
-				},
-			},
-		},
-	}
+  commands := []*discordgo.ApplicationCommand{
+    {
+      Name:        "ping",
+      Description: "Will reply you back",
+    },
+    {
+      Name:        "commit",
+      Description: "Generate commit message push changes",
+    },
+    {
+      Name:        "diff",
+      Description: "Show diff of changes in current worktree",
+    },
+    {
+      Name:        "opencode",
+      Description: "Starting work with Opencode",
+      Type:        discordgo.ChatApplicationCommand,
+      Options: []*discordgo.ApplicationCommandOption{
+        {
+          Name:        "repository",
+          Description: "Select repository",
+          Type:        discordgo.ApplicationCommandOptionInteger,
+          Required:    true,
+          Choices:     repositoryChoices,
+        },
+        {
+          Name:        "model",
+          Description: "Select model",
+          Type:        discordgo.ApplicationCommandOptionInteger,
+          Required:    true,
+          Choices:     modelChoices,
+        },
+      },
+    },
+    {
+      Name:        "plan",
+      Description: "Starting work with Opencode in planning mode",
+      Type:        discordgo.ChatApplicationCommand,
+      Options: []*discordgo.ApplicationCommandOption{
+        {
+          Name:        "repository",
+          Description: "Select repository",
+          Type:        discordgo.ApplicationCommandOptionInteger,
+          Required:    true,
+          Choices:     repositoryChoices,
+        },
+        {
+          Name:        "model",
+          Description: "Select model",
+          Type:        discordgo.ApplicationCommandOptionInteger,
+          Required:    true,
+          Choices:     modelChoices,
+        },
+      },
+    },
+  }
 
 	for _, command := range commands {
 		_, err := s.ApplicationCommandCreate(s.State.User.ID, "", command)

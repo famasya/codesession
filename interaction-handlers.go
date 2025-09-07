@@ -29,17 +29,157 @@ func InteractionHandlers(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 
-	if command == "opencode" {
-		handleOpencodeCommand(s, i)
-	}
+  if command == "opencode" {
+    handleOpencodeCommand(s, i)
+  }
 
-	if command == "commit" {
-		handleCommitCommand(s, i)
-	}
+  if command == "plan" {
+    handlePlanCommand(s, i)
+  }
 
-	if command == "diff" {
-		handleDiffCommand(s, i)
-	}
+  if command == "commit" {
+    handleCommitCommand(s, i)
+  }
+
+  if command == "diff" {
+    handleDiffCommand(s, i)
+  }
+}
+
+func handlePlanCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+  // Respond immediately to prevent timeout
+  err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+    Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+    Data: &discordgo.InteractionResponseData{
+      Flags: discordgo.MessageFlagsEphemeral,
+    },
+  })
+  if err != nil {
+    slog.Error("failed to respond to interaction", "error", err)
+    return
+  }
+
+  // Get command options
+  options := i.ApplicationCommandData().Options
+  var repositoryIndex, modelIndex int
+
+  for _, option := range options {
+    switch option.Name {
+    case "repository":
+      repositoryIndex = int(option.IntValue())
+    case "model":
+      modelIndex = int(option.IntValue())
+    }
+  }
+
+  // Get selected repository
+  if repositoryIndex >= len(AppConfig.Repositories) {
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+      Content: &[]string{"Invalid repository selection"}[0],
+    })
+    return
+  }
+
+  repository := AppConfig.Repositories[repositoryIndex]
+  model := AppConfig.Models[modelIndex]
+
+  // Create a new thread
+  threadName := generator.Generate()
+  slog.Debug("creating thread", "thread_name", threadName, "channel_id", i.ChannelID)
+  thread, err := s.ThreadStart(
+    i.ChannelID,
+    fmt.Sprintf("OpenCode Plan: %s", threadName),
+    discordgo.ChannelTypeGuildPublicThread,
+    1440, // 24 hours
+  )
+  if err != nil {
+    slog.Error("failed to create thread", "error", err)
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+      Content: &[]string{"Failed to create thread"}[0],
+    })
+    return
+  }
+  slog.Debug("thread created successfully", "thread_id", thread.ID, "thread_name", thread.Name)
+
+  // Create worktree directory in current repository
+  repoPath := repository.Path
+  worktreeDir := filepath.Join(repoPath, ".worktrees", thread.ID)
+  err = os.MkdirAll(filepath.Dir(worktreeDir), 0755)
+  if err != nil {
+    slog.Error("failed to create worktrees directory", "error", err)
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+      Content: &[]string{"Failed to create worktrees directory"}[0],
+    })
+    return
+  }
+
+  // Create git worktree FIRST with branch name as thread ID
+  err = gitOps.CreateWorktree(repoPath, worktreeDir, thread.ID)
+  if err != nil {
+    slog.Error("failed to create git worktree", "error", err)
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+      Content: &[]string{"Failed to create git worktree"}[0],
+    })
+    return
+  }
+
+  // Create session AFTER worktree is created
+  slog.Debug("creating session", "thread_id", thread.ID, "worktree_dir", worktreeDir)
+  session := GetOrCreateSession(thread.ID, worktreeDir, repository.Path, repository.Name, "plan")
+  if session == nil {
+    slog.Error("failed to create session", "thread_id", thread.ID)
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+      Content: &[]string{"Failed to create session"}[0],
+    })
+    return
+  }
+  slog.Debug("session created successfully", "thread_id", thread.ID, "session_id", session.ID)
+
+  // Set the selected model in session data
+  slog.Debug("setting model in session data", "thread_id", thread.ID)
+  sessionMutex.Lock()
+  slog.Debug("acquired session mutex", "thread_id", thread.ID)
+  if sessionData, exists := sessionCache[thread.ID]; exists {
+    slog.Debug("found session in cache", "thread_id", thread.ID)
+    sessionData.Model = model
+
+    // Save session data without acquiring mutex again (we already hold it)
+    data, err := json.MarshalIndent(sessionData, "", "  ")
+    if err != nil {
+      slog.Error("failed to marshal session data", "error", err)
+    } else {
+      filePath := filepath.Join(sessionsDirectory, fmt.Sprintf("%s.json", sessionData.ThreadID))
+      if err := os.WriteFile(filePath, data, 0644); err != nil {
+        slog.Error("failed to save session data with model", "error", err)
+      } else {
+        slog.Debug("saved session data with model", "thread_id", thread.ID)
+      }
+    }
+  } else {
+    slog.Error("session not found in cache", "thread_id", thread.ID)
+  }
+  sessionMutex.Unlock()
+  slog.Debug("released session mutex", "thread_id", thread.ID)
+
+  // Send initial message to the thread
+  slog.Debug("sending welcome message to thread", "thread_id", thread.ID)
+  trimmedWorktreeDir := strings.TrimPrefix(worktreeDir, repository.Path)
+  welcomeMessage := fmt.Sprintf(`%s
+OpenCode Planning Session Started
+Repository: %s
+Model: %s
+Agent: Plan (read-only mode)
+Worktree Path: %s
+Session ID: %s
+%s`, "```", repository.Name, fmt.Sprintf("%s/%s", model.ProviderID, model.ModelID), trimmedWorktreeDir, session.ID, "```")
+
+  SendDiscordMessage(thread.ID, welcomeMessage)
+
+  // Update the interaction response with success message AFTER welcome message
+  slog.Debug("updating interaction response", "thread_id", thread.ID)
+  s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+    Content: &[]string{fmt.Sprintf("OpenCode planning session created successfully! Check the thread: %s", thread.Mention())}[0],
+  })
 }
 
 func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -119,16 +259,16 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 		return
 	}
 
-	// Create session AFTER worktree is created
-	slog.Debug("creating session", "thread_id", thread.ID, "worktree_dir", worktreeDir)
-	session := GetOrCreateSession(thread.ID, worktreeDir, repository.Path, repository.Name)
-	if session == nil {
-		slog.Error("failed to create session", "thread_id", thread.ID)
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"Failed to create session"}[0],
-		})
-		return
-	}
+  // Create session AFTER worktree is created
+  slog.Debug("creating session", "thread_id", thread.ID, "worktree_dir", worktreeDir)
+  session := GetOrCreateSession(thread.ID, worktreeDir, repository.Path, repository.Name, "build")
+  if session == nil {
+    slog.Error("failed to create session", "thread_id", thread.ID)
+    s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+      Content: &[]string{"Failed to create session"}[0],
+    })
+    return
+  }
 	slog.Debug("session created successfully", "thread_id", thread.ID, "session_id", session.ID)
 
 	// Set the selected model in session data

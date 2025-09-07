@@ -7,18 +7,19 @@ This is a Discord bot that integrates with OpenCode, allowing users to start AI 
 - **Main Components**:
   - `main.go`: Entry point that runs both Discord bot and OpenCode server concurrently
   - `discord.go`: Discord bot setup, slash command registration, and message handling
-  - `interaction-handlers.go`: Discord slash command handlers (`/ping`, `/opencode`, `/commit`)
+  - `interaction-handlers.go`: Discord slash command handlers (`/ping`, `/opencode`, `/plan`, `/commit`)
   - `opencode-server.go`: OpenCode server management and lifecycle
   - `opencode-client.go`: OpenCode client integration, session management, and event streaming
   - `opencode-event-types.go`: Type definitions for OpenCode event handling
   - `config.go`: TOML configuration loading and management
 
 - **Core Features**:
-  - Discord slash commands for starting OpenCode sessions
+  - Discord slash commands for starting OpenCode sessions (`/opencode` for build mode, `/plan` for planning mode)
   - Git worktree creation for isolated development environments
   - Real-time OpenCode event streaming to Discord threads
   - Automatic commit generation with AI summaries
   - Session persistence and recovery
+  - Agent-based interactions (build agent for full development, plan agent for analysis)
 
 ## Build and Development Commands
 
@@ -69,6 +70,27 @@ name = "repository_name"
 - Concurrent operations use `sync.WaitGroup` and `context.Context`
 - Thread-safe operations use `sync.RWMutex` for session management
 - Git operations are executed via `os/exec` Command
+
+## Agent System
+
+The bot supports two OpenCode agents with different capabilities:
+
+### Build Agent (Default)
+- **Command**: `/opencode`
+- **Capabilities**: Full development access with all tools enabled
+- **Use case**: General coding, implementation, and development tasks
+- **Tools**: write, edit, bash, read, grep, glob, etc.
+
+### Plan Agent
+- **Command**: `/plan`
+- **Capabilities**: Read-only analysis and planning mode
+- **Use case**: Code review, planning, analysis without making changes
+- **Tools**: Limited to read-only operations (read, grep, glob)
+
+### Agent Selection
+- Use `/opencode` for full development sessions (uses "build" agent)
+- Use `/plan` for planning and analysis sessions (uses "plan" agent)
+- Mention the bot (@bot) in existing threads to continue with the agent that was used to start the session
 
 ## Directory Structure
 

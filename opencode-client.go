@@ -31,6 +31,7 @@ type SessionData struct {
 	ThreadID       string         `json:"thread_id"`
 	SessionID      string         `json:"session_id"`
 	Model          Model          `json:"model"`
+	Agent          string         `json:"agent"` // "build" or "plan"
 	WorktreePath   string         `json:"worktree_path"`
 	RepositoryPath string         `json:"repository_path"`
 	RepositoryName string         `json:"repository_name"`
@@ -117,10 +118,14 @@ func lazyLoadSession(threadID string) *SessionData {
 		ID: sessionData.SessionID,
 	}
 
-	// Store session with in-memory data (initially inactive)
-	sessionData.Session = session
-	sessionData.Active = false
-	sessionCache[threadID] = &sessionData
+  // Store session with in-memory data (initially inactive)
+  sessionData.Session = session
+  sessionData.Active = false
+  // Default to "build" agent if not set (for backward compatibility)
+  if sessionData.Agent == "" {
+    sessionData.Agent = "build"
+  }
+  sessionCache[threadID] = &sessionData
 
 	slog.Info("lazy loaded session", "thread_id", threadID, "session_id", session.ID)
 	return &sessionData
@@ -141,7 +146,7 @@ func saveSessionData(sessionData *SessionData) error {
 }
 
 // get or create session for thread
-func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName string) *opencode.Session {
+func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName, agent string) *opencode.Session {
 	client := Opencode()
 
 	// Try to lazy load session first
@@ -173,18 +178,19 @@ func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName s
 		return nil
 	}
 
-	// Cache session with active state and save session data
-	sessionData = &SessionData{
-		ThreadID:       threadID,
-		SessionID:      session.ID,
-		Session:        session,
-		Active:         true,
-		WorktreePath:   absWorktreePath, // Store absolute path for consistency
-		RepositoryPath: repositoryPath,
-		RepositoryName: repositoryName,
-		CreatedAt:      time.Now(),
-		Commits:        make([]CommitRecord, 0),
-	}
+  // Cache session with active state and save session data
+  sessionData = &SessionData{
+    ThreadID:       threadID,
+    SessionID:      session.ID,
+    Session:        session,
+    Active:         true,
+    Agent:          agent,
+    WorktreePath:   absWorktreePath, // Store absolute path for consistency
+    RepositoryPath: repositoryPath,
+    RepositoryName: repositoryName,
+    CreatedAt:      time.Now(),
+    Commits:        make([]CommitRecord, 0),
+  }
 	sessionMutex.Lock()
 	sessionCache[threadID] = sessionData
 	sessionMutex.Unlock()
@@ -235,11 +241,16 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 	client := Opencode()
 	ctx := context.Background()
 
-	// Enhanced message with explicit worktree boundary instruction
+	// Enhanced message with explicit worktree boundary instruction and agent specification
+	agentMention := ""
+	if sessionData.Agent != "" {
+		agentMention = fmt.Sprintf("@%s ", sessionData.Agent)
+	}
+
 	enhancedMessage := fmt.Sprintf("IMPORTANT: You are working in an isolated git worktree at: %s\n"+
 		"You MUST only access files within this directory. Do not attempt to access files outside this worktree.\n"+
 		"All project files are available within this worktree directory.\n\n"+
-		"User request: %s", absWorktreePath, message)
+		"%sUser request: %s", absWorktreePath, agentMention, message)
 
 	response, err := client.Session.Prompt(ctx, session.ID, opencode.SessionPromptParams{
 		Directory: opencode.F(absWorktreePath),
