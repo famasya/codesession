@@ -102,8 +102,8 @@ func registerCommands(s *discordgo.Session) error {
 			Description: "Show diff of changes in current worktree",
 		},
 		{
-			Name:        "opencode",
-			Description: "Starting work with Opencode",
+			Name:        "codesession",
+			Description: "Starting work with CodeSession",
 			Type:        discordgo.ChatApplicationCommand,
 			Options: []*discordgo.ApplicationCommandOption{
 				{

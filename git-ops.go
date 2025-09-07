@@ -284,8 +284,8 @@ func (g *GitOperations) Commit(worktreePath, message string) (string, error) {
 	// Create commit
 	commit, err := worktree.Commit(message, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  "OpenCode Bot",
-			Email: "opencode-bot@example.com",
+			Name:  "CodeSession Bot",
+			Email: "codesession-bot@example.com",
 		},
 	})
 	if err != nil {
