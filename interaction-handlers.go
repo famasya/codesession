@@ -98,8 +98,8 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 	slog.Debug("thread created successfully", "thread_id", thread.ID, "thread_name", thread.Name)
 
 	// Create worktree directory in current repository
-	currentDir, _ := os.Getwd()
-	worktreeDir := filepath.Join(currentDir, ".worktrees", thread.ID)
+	repoPath := repository.Path
+	worktreeDir := filepath.Join(repoPath, ".worktrees", thread.ID)
 	err = os.MkdirAll(filepath.Dir(worktreeDir), 0755)
 	if err != nil {
 		slog.Error("failed to create worktrees directory", "error", err)
@@ -109,8 +109,8 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 		return
 	}
 
-	// Create git worktree FIRST
-	err = gitOps.CreateWorktree(currentDir, worktreeDir)
+	// Create git worktree FIRST with branch name as thread ID
+	err = gitOps.CreateWorktree(repoPath, worktreeDir, thread.ID)
 	if err != nil {
 		slog.Error("failed to create git worktree", "error", err)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
@@ -257,10 +257,6 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if part.Type == "text" && part.Text != "" {
 			summary = part.Text
 			slog.Debug("found AI summary in text part", "thread_id", threadID, "part_index", i, "raw_summary", summary, "length", len(summary))
-			if len(summary) > 50 {
-				summary = summary[:50]
-				slog.Debug("summary truncated to 50 chars", "thread_id", threadID, "truncated_summary", summary)
-			}
 			break // Use the first text-type part we find
 		}
 	}
