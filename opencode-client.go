@@ -408,12 +408,12 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 			// format message based on part type
 			var statusUpdate string
 			var shouldCreateNewMessage bool
-			
+
 			switch part.Type {
 			case PartTypeTool:
 				// for tool parts, only send completed tools as status updates
 				if part.Tool != "" && part.State != nil && part.State.Status == ToolStatusCompleted {
-					statusUpdate = fmt.Sprintf("Tool: %s", part.Tool)
+					statusUpdate = fmt.Sprintf("---\nTool: %s\n---", part.Tool)
 				}
 			case PartTypeReasoning:
 				if part.Text != "" {
