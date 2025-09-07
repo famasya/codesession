@@ -29,7 +29,7 @@ func InteractionHandlers(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 
-	if command == "opencode" {
+	if command == "codesession" {
 		handleOpencodeCommand(s, i)
 	}
 
@@ -129,7 +129,7 @@ func handleOpencodeCommand(s *discordgo.Session, i *discordgo.InteractionCreate)
 
 	// Create session AFTER worktree is created
 	slog.Debug("creating session", "thread_id", thread.ID, "worktree_dir", worktreeDir)
-	session := GetOrCreateSession(thread.ID, worktreeDir, repository.Path, repository.Name)
+	session := GetOrCreateSession(thread.ID, worktreeDir, repository.Path, repository.Name, i.Member.User.ID)
 	if session == nil {
 		slog.Error("failed to create session", "thread_id", thread.ID)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
@@ -205,7 +205,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if session == nil {
 		slog.Error("no session found for thread", "thread_id", threadID)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"No CodeSession session found for this thread. Please start a session first using `/opencode` command."}[0],
+			Content: &[]string{"No CodeSession session found for this thread. Please start a session first using `/codesession` command."}[0],
 		})
 		return
 	}
@@ -467,7 +467,7 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	slog.Debug("lazy loading session", "thread_id", threadID)
 	sessionData := lazyLoadSession(threadID)
 	if sessionData == nil {
-		s.ChannelMessageSend(m.ChannelID, "No CodeSession session found for this thread. Please start a session first using `/opencode` command.")
+		s.ChannelMessageSend(m.ChannelID, "No CodeSession session found for this thread. Please start a session first using `/codesession` command.")
 		return
 	}
 
@@ -520,7 +520,7 @@ func handleDiffCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if session == nil {
 		slog.Error("no session found for thread", "thread_id", threadID)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"No CodeSession session found for this thread. Please start a session first using `/opencode` command."}[0],
+			Content: &[]string{"No CodeSession session found for this thread. Please start a session first using `/codesession` command."}[0],
 		})
 		return
 	}

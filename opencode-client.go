@@ -38,8 +38,11 @@ type SessionData struct {
 	Commits        []CommitRecord `json:"commits"`
 
 	// Non-serialized runtime fields
-	Session *opencode.Session `json:"-"` // Don't serialize the session object
-	Active  bool              `json:"-"` // Don't serialize the active state
+	Session              *opencode.Session `json:"-"` // Don't serialize the session object
+	Active               bool              `json:"-"` // Don't serialize the active state
+	LastStatusMessageID  string            `json:"-"` // Don't serialize the last status message ID
+	StatusMessageContent string            `json:"-"` // Don't serialize the current status message content
+	UserID               string            `json:"-"` // Don't serialize the user ID who started the session
 }
 
 var sessionCache = make(map[string]*SessionData)
@@ -141,7 +144,7 @@ func saveSessionData(sessionData *SessionData) error {
 }
 
 // get or create session for thread
-func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName string) *opencode.Session {
+func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName, userID string) *opencode.Session {
 	client := Opencode()
 
 	// Try to lazy load session first
@@ -184,6 +187,7 @@ func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName s
 		RepositoryName: repositoryName,
 		CreatedAt:      time.Now(),
 		Commits:        make([]CommitRecord, 0),
+		UserID:         userID,
 	}
 	sessionMutex.Lock()
 	sessionCache[threadID] = sessionData
@@ -402,30 +406,36 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 			}
 
 			// format message based on part type
-			var discordMessage string
+			var statusUpdate string
+			var shouldCreateNewMessage bool
+			
 			switch part.Type {
 			case PartTypeTool:
-				// for tool parts, only send completed tools to Discord
+				// for tool parts, only send completed tools as status updates
 				if part.Tool != "" && part.State != nil && part.State.Status == ToolStatusCompleted {
-					discordMessage = fmt.Sprintf("> %s tool: %s", part.State.Status, part.Tool)
+					statusUpdate = fmt.Sprintf("Tool: %s", part.Tool)
 				}
 			case PartTypeReasoning:
 				if part.Text != "" {
-					cleanText := formatReasoning(part.Text)
-					discordMessage = fmt.Sprintf("> %s", cleanText)
+					statusUpdate = "*" + part.Text + "*"
 				}
 			case PartTypeText:
+				// Text responses should be sent as new messages, not status updates
 				if part.Text != "" {
-					discordMessage = removeExcessiveNewLine(part.Text)
+					cleanText := removeExcessiveNewLine(part.Text)
+					sendToDiscord(threadID, cleanText)
+					shouldCreateNewMessage = true
 				}
 			}
 
 			// debug log
-			slog.Debug("sending message to Discord", "thread_id", threadID, "session_id", sessionData.SessionID, "message", discordMessage)
+			slog.Debug("processing message for Discord", "thread_id", threadID, "session_id", sessionData.SessionID, "status_update", statusUpdate, "new_message", shouldCreateNewMessage)
 
-			// send to Discord if we have content
-			if discordMessage != "" {
-				sendToDiscord(threadID, discordMessage)
+			// update status message if we have a status update
+			if statusUpdate != "" && !shouldCreateNewMessage {
+				// Format the status update as blockquote to handle multi-line content
+				formattedUpdate := formatBlockquote(statusUpdate)
+				updateStatusMessage(threadID, formattedUpdate)
 			}
 		case opencode.EventListResponseTypeSessionIdle:
 			eventData := serializeEvent[struct {
@@ -437,6 +447,18 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 			}
 
 			slog.Debug("session idle detected", "thread_id", threadID, "session_id", eventData.SessionID)
+
+			// Mark status message as completed
+			updateStatusMessage(threadID, "Task completed!")
+
+			// Mention the user that the task is completed
+			sessionMutex.RLock()
+			sessionData, exists := sessionCache[threadID]
+			sessionMutex.RUnlock()
+			if exists && sessionData.UserID != "" {
+				mentionMessage := fmt.Sprintf("<@%s> Task completed!", sessionData.UserID)
+				sendToDiscord(threadID, mentionMessage)
+			}
 
 			// set session inactive and cleanup
 			SetSessionActive(threadID, false)
@@ -522,8 +544,8 @@ func spawnListenerIfNotExists(ctx context.Context, wg *sync.WaitGroup, threadID 
 	return true // New listener spawned
 }
 
-// formatReasoning adds blockquote to reasoning text
-func formatReasoning(text string) string {
+// formatBlockquote adds blockquote to text
+func formatBlockquote(text string) string {
 	text = strings.TrimRight(text, "\n")
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
@@ -539,6 +561,82 @@ func removeExcessiveNewLine(text string) string {
 	// remove excessive to only 1 new line
 	text = regexp.MustCompile(`\n\n+`).ReplaceAllString(text, "\n\n")
 	return text
+}
+
+// editDiscordMessage edits an existing Discord message
+func editDiscordMessage(threadID, messageID, newContent string) error {
+	if discord == nil {
+		slog.Error("discord session not available", "thread_id", threadID)
+		return fmt.Errorf("discord session not available")
+	}
+
+	_, err := discord.ChannelMessageEdit(threadID, messageID, newContent)
+	if err != nil {
+		slog.Error("failed to edit message on discord", "thread_id", threadID, "message_id", messageID, "error", err)
+		return err
+	} else {
+		slog.Debug("edited message on discord", "thread_id", threadID, "message_id", messageID, "content_length", len(newContent))
+	}
+	return nil
+}
+
+// updateStatusMessage appends a new status update to the current status message
+// Handles character limits by creating continuation messages when needed
+func updateStatusMessage(threadID, statusUpdate string) {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+
+	sessionData, exists := sessionCache[threadID]
+	if !exists {
+		slog.Error("session not found for status update", "thread_id", threadID)
+		return
+	}
+
+	const maxMessageLength = 1800 // Leave buffer before Discord's 2000 limit
+	newContent := sessionData.StatusMessageContent + "\n" + statusUpdate
+
+	// Check if we need to create a continuation message
+	if len(newContent) > maxMessageLength {
+		// Mark current message as continued
+		continuedContent := sessionData.StatusMessageContent + "\n...continued below..."
+		if sessionData.LastStatusMessageID != "" {
+			editDiscordMessage(threadID, sessionData.LastStatusMessageID, continuedContent)
+		}
+
+		// Create new continuation message
+		newStatusContent := "CodeSession Working (continued)...\n...continued from above...\n" + statusUpdate
+		msg, err := discord.ChannelMessageSend(threadID, newStatusContent)
+		if err != nil {
+			slog.Error("failed to create continuation status message", "thread_id", threadID, "error", err)
+			return
+		}
+
+		// Update session data with new message
+		sessionData.LastStatusMessageID = msg.ID
+		sessionData.StatusMessageContent = newStatusContent
+		slog.Debug("created continuation status message", "thread_id", threadID, "message_id", msg.ID)
+	} else {
+		// Update existing message
+		if sessionData.LastStatusMessageID == "" {
+			// Create initial status message
+			initialContent := "CodeSession Working...\n" + statusUpdate
+			msg, err := discord.ChannelMessageSend(threadID, initialContent)
+			if err != nil {
+				slog.Error("failed to create initial status message", "thread_id", threadID, "error", err)
+				return
+			}
+			sessionData.LastStatusMessageID = msg.ID
+			sessionData.StatusMessageContent = initialContent
+			slog.Debug("created initial status message", "thread_id", threadID, "message_id", msg.ID)
+		} else {
+			// Edit existing message
+			sessionData.StatusMessageContent = newContent
+			err := editDiscordMessage(threadID, sessionData.LastStatusMessageID, newContent)
+			if err != nil {
+				slog.Error("failed to update status message", "thread_id", threadID, "error", err)
+			}
+		}
+	}
 }
 
 // sendToDiscord sends a message to the Discord channel
