@@ -213,3 +213,159 @@ func SendDiscordMessage(threadID string, message string) {
 		slog.Debug("sent message chunk to discord", "thread_id", threadID, "chunk_len", len(chunk))
 	}
 }
+
+// editDiscordMessage edits an existing Discord message
+func editDiscordMessage(threadID, messageID, newContent string) error {
+	if discord == nil {
+		slog.Error("discord session not available", "thread_id", threadID)
+		return fmt.Errorf("discord session not available")
+	}
+
+	_, err := discord.ChannelMessageEdit(threadID, messageID, newContent)
+	if err != nil {
+		slog.Error("failed to edit message on discord", "thread_id", threadID, "message_id", messageID, "error", err)
+		return err
+	} else {
+		slog.Debug("edited message on discord", "thread_id", threadID, "message_id", messageID, "content_length", len(newContent))
+	}
+	return nil
+}
+
+// updateToolStatus appends tool status updates (formatted as blockquotes)
+func updateToolStatus(threadID, toolUpdate string) {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+
+	sessionData, exists := sessionCache[threadID]
+	if !exists {
+		slog.Error("session not found for tool status update", "thread_id", threadID)
+		return
+	}
+	
+	if sessionData == nil {
+		slog.Error("session data is nil", "thread_id", threadID)
+		return
+	}
+
+	// Format as blockquote and append to tool status history
+	formattedUpdate := formatBlockquote(toolUpdate)
+	sessionData.ToolStatusHistory = appendToContentHistory(sessionData.ToolStatusHistory, formattedUpdate)
+
+	// Rebuild and update the complete message
+	rebuildStatusMessage(threadID, sessionData)
+}
+
+// updateTextResponse replaces the current response content
+func updateTextResponse(threadID, textResponse string) {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+
+	sessionData, exists := sessionCache[threadID]
+	if !exists {
+		slog.Error("session not found for text response update", "thread_id", threadID)
+		return
+	}
+
+	// Replace the current response content (not append, replace for new responses)
+	sessionData.CurrentResponse = textResponse
+
+	// Rebuild and update the complete message
+	rebuildStatusMessage(threadID, sessionData)
+}
+
+// rebuildStatusMessage combines content history and updates Discord message
+func rebuildStatusMessage(threadID string, sessionData *SessionData) {
+	const maxMessageLength = 1800 // Leave buffer before Discord's 2000 limit
+
+	// Build the complete message content
+	header := "```fix\n✨codesession is working...\n```"
+	var parts []string
+
+	// Add tool status history if present
+	if sessionData.ToolStatusHistory != "" {
+		parts = append(parts, sessionData.ToolStatusHistory)
+	}
+
+	// Add current response if present
+	if sessionData.CurrentResponse != "" {
+		parts = append(parts, sessionData.CurrentResponse)
+	}
+
+	// Combine all parts
+	newContent := header
+	if len(parts) > 0 {
+		newContent += "\n" + strings.Join(parts, "\n")
+	}
+
+	// Check if we need to create a continuation message
+	if len(newContent) > maxMessageLength {
+		// Mark current message as continued
+		if sessionData.LastStatusMessageID != "" {
+			continuedContent := sessionData.StatusMessageContent + "\n...continued below..."
+			editDiscordMessage(threadID, sessionData.LastStatusMessageID, continuedContent)
+		}
+
+		// Calculate how much content we can fit in continuation message
+		continueHeader := "```fix\n✨codesession is working (continued...)\n```\n"
+		maxContentForContinuation := maxMessageLength - len(continueHeader)
+
+		// Combine parts and truncate if needed
+		combinedContent := strings.Join(parts, "\n")
+		truncatedContent := combinedContent
+		if len(truncatedContent) > maxContentForContinuation {
+			truncatedContent = truncatedContent[len(truncatedContent)-maxContentForContinuation:]
+			// Try to start from a newline to avoid cutting mid-line
+			if newlineIndex := strings.Index(truncatedContent, "\n"); newlineIndex != -1 {
+				truncatedContent = truncatedContent[newlineIndex+1:]
+			}
+		}
+
+		// Create new continuation message
+		newStatusContent := continueHeader + truncatedContent
+		msg, err := discord.ChannelMessageSend(threadID, newStatusContent)
+		if err != nil {
+			slog.Error("failed to create continuation status message", "thread_id", threadID, "error", err)
+			return
+		}
+
+		sessionData.LastStatusMessageID = msg.ID
+		sessionData.StatusMessageContent = newStatusContent
+		slog.Debug("created continuation status message", "thread_id", threadID, "message_id", msg.ID)
+		return
+	}
+
+	// Update existing message or create new one
+	if sessionData.LastStatusMessageID == "" {
+		// Create initial status message
+		msg, err := discord.ChannelMessageSend(threadID, newContent)
+		if err != nil {
+			slog.Error("failed to create initial status message", "thread_id", threadID, "error", err)
+			return
+		}
+		sessionData.LastStatusMessageID = msg.ID
+		sessionData.StatusMessageContent = newContent
+		slog.Debug("created initial status message", "thread_id", threadID, "message_id", msg.ID)
+	} else {
+		// Edit existing message
+		sessionData.StatusMessageContent = newContent
+		err := editDiscordMessage(threadID, sessionData.LastStatusMessageID, newContent)
+		if err != nil {
+			slog.Error("failed to update status message", "thread_id", threadID, "error", err)
+		}
+	}
+}
+
+// sendToDiscord sends a message to the Discord channel
+func sendToDiscord(threadID, message string) {
+	if discord == nil {
+		slog.Error("discord session not available", "thread_id", threadID)
+		return
+	}
+
+	_, err := discord.ChannelMessageSend(threadID, message)
+	if err != nil {
+		slog.Error("failed to send message to discord", "thread_id", threadID, "error", err)
+	} else {
+		slog.Debug("sent message to discord", "thread_id", threadID, "message_length", len(message))
+	}
+}
