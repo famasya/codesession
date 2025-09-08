@@ -41,6 +41,17 @@ func (g *GitOperations) CreateWorktree(repoPath, worktreePath, branchName string
 		return fmt.Errorf("invalid branch name %q: %s", branchName, strings.TrimSpace(string(out)))
 	}
 
+	// Pull latest changes from remote before creating worktree
+	pullCmd := exec.Command("git", "pull", "origin", "main")
+	pullCmd.Dir = repoPath
+	pullOutput, pullErr := pullCmd.CombinedOutput()
+	if pullErr != nil {
+		slog.Warn("failed to pull latest changes before creating worktree", "error", pullErr, "output", string(pullOutput))
+		// Continue anyway - might be network issues or new repo
+	} else {
+		slog.Debug("pulled latest changes before creating worktree", "repo_path", repoPath)
+	}
+
 	// Create the worktree directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0755); err != nil {
 		return fmt.Errorf("failed to create worktree parent directory: %w", err)
@@ -198,6 +209,28 @@ func (g *GitOperations) GetCurrentBranch(worktreePath string) (string, error) {
 // Push pushes the specified branch to the remote origin
 func (g *GitOperations) Push(worktreePath, branch string) error {
 	slog.Debug("pushing to remote", "worktree_path", worktreePath, "branch", branch)
+
+	// Fetch latest remote state
+	fetchCmd := exec.Command("git", "fetch", "origin", branch)
+	fetchCmd.Dir = worktreePath
+	fetchOutput, fetchErr := fetchCmd.CombinedOutput()
+	if fetchErr != nil {
+		slog.Warn("failed to fetch before push", "error", fetchErr, "output", string(fetchOutput))
+		// Continue with push - might be a new branch
+	} else {
+		slog.Debug("fetched latest remote state", "worktree_path", worktreePath, "branch", branch)
+		
+		// Reset to remote state to accept remote as source of truth
+		resetCmd := exec.Command("git", "reset", "--hard", "origin/"+branch)
+		resetCmd.Dir = worktreePath
+		resetOutput, resetErr := resetCmd.CombinedOutput()
+		if resetErr != nil {
+			slog.Warn("failed to reset to remote state", "error", resetErr, "output", string(resetOutput))
+			// Continue with push anyway
+		} else {
+			slog.Debug("reset to remote state successfully", "worktree_path", worktreePath, "branch", branch)
+		}
+	}
 
 	cmd := exec.Command("git", "push", "origin", branch)
 	cmd.Dir = worktreePath
