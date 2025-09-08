@@ -22,7 +22,15 @@
    sudo nano /opt/codesession/config.toml  # Edit with your Discord bot token and settings
    ```
 
-4. **Set ownership** (replace `your-user` with the username you created):
+4. **Install OpenCode** for the user:
+   ```bash
+   # Switch to the user and install OpenCode
+   sudo -u your-user bash -c 'curl -fsSL https://opencode.ai/install.sh | sh'
+   ```
+
+   Note: you should set your provider auth by running `opencode auth login`.
+
+5. **Set ownership** (replace `your-user` with the username you created):
    ```bash
    sudo chown -R your-user:your-user /opt/codesession
    ```
@@ -52,8 +60,8 @@
    StandardOutput=journal
    StandardError=journal
 
-   # Environment
-   Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+   # Environment - Include user's OpenCode installation
+   Environment=PATH=/home/your-user/.opencode/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
    [Install]
    WantedBy=multi-user.target
@@ -123,7 +131,7 @@ Persistent data is stored in:
 
 2. Download new version:
    ```bash
-   cd /opt
+   cd /opt/codesession
    sudo wget https://github.com/famasya/codesession/releases/latest/download/codesession-linux-amd64
    sudo chmod +x codesession-linux-amd64
    sudo mv codesession-linux-amd64 codesession
