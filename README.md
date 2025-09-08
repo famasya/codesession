@@ -1,6 +1,24 @@
-# codesession - Collaborative Development from Discord
+# codesession - collaborative development from discord
 
 This is a Discord bot to enable collaborative development from Discord via [opencode](https://opencode.ai).
+
+## How it Works
+
+```mermaid
+ graph TD
+      A[Discord User] --> B[codesession bot]
+      B --> C[Git Worktrees]
+      B --> D[OpenCode Server]
+      D --> E[Discord Thread Updates]
+      E --> F[Git commit]
+      C --> F
+```
+
+Technical flow: 
+1. **Bot startup**: Starts OpenCode server and listens to `/events` SSE stream
+2. **Slash commands**: Create Discord threads and send commands to OpenCode server  
+3. **SSE events**: Every event from OpenCode is pushed to the corresponding Discord thread
+4. **Git operations**: Isolated worktrees for each session with commits to repository
 
 ## Features
 - **Agentic AI from Discord**: Control agentic AI from Discord with opencode.
