@@ -25,26 +25,6 @@ func NewGitOperations() *GitOperations {
 	return &GitOperations{}
 }
 
-// getDefaultBranch detects the default branch for the repository
-func (g *GitOperations) getDefaultBranch(repoPath string) string {
-	// Try to get the default branch from remote HEAD
-	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
-	cmd.Dir = repoPath
-	
-	if output, err := cmd.CombinedOutput(); err == nil {
-		// Output format: "refs/remotes/origin/main" -> extract "main"
-		refPath := strings.TrimSpace(string(output))
-		if parts := strings.Split(refPath, "/"); len(parts) >= 3 {
-			defaultBranch := parts[len(parts)-1]
-			slog.Debug("detected default branch from remote HEAD", "repo_path", repoPath, "branch", defaultBranch)
-			return defaultBranch
-		}
-	}
-	
-	// Fallback to "main" if detection fails
-	slog.Debug("failed to detect default branch, using fallback", "repo_path", repoPath, "fallback", "main")
-	return "main"
-}
 
 // CreateWorktree creates a new git worktree at the specified path with a branch
 func (g *GitOperations) CreateWorktree(repoPath, worktreePath, branchName string) error {
@@ -62,29 +42,24 @@ func (g *GitOperations) CreateWorktree(repoPath, worktreePath, branchName string
 		return fmt.Errorf("invalid branch name %q: %s", branchName, strings.TrimSpace(string(out)))
 	}
 
-	// Fetch latest changes from remote before creating worktree (non-mutating)
-	fetchCmd := exec.Command("git", "fetch", "origin")
-	fetchCmd.Dir = repoPath
-	fetchOutput, fetchErr := fetchCmd.CombinedOutput()
-	if fetchErr != nil {
-		slog.Warn("failed to fetch latest changes before creating worktree", "error", fetchErr, "output", string(fetchOutput))
+	// Pull latest changes from current branch
+	pullCmd := exec.Command("git", "pull")
+	pullCmd.Dir = repoPath
+	pullOutput, pullErr := pullCmd.CombinedOutput()
+	if pullErr != nil {
+		slog.Warn("failed to pull latest changes before creating worktree", "error", pullErr, "output", string(pullOutput))
 		// Continue anyway - might be network issues or new repo
 	} else {
-		slog.Debug("fetched latest changes before creating worktree", "repo_path", repoPath)
+		slog.Debug("pulled latest changes from current branch before creating worktree", "repo_path", repoPath)
 	}
-	
-	// Detect the default branch
-	defaultBranch := g.getDefaultBranch(repoPath)
-	baseRef := "origin/" + defaultBranch
-	slog.Debug("using base ref for worktree creation", "repo_path", repoPath, "base_ref", baseRef)
 
 	// Create the worktree directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0755); err != nil {
 		return fmt.Errorf("failed to create worktree parent directory: %w", err)
 	}
 
-	// Create git worktree with new branch from detected base ref
-	cmd := exec.Command("git", "worktree", "add", "-B", branchName, worktreePath, baseRef)
+	// Create git worktree with new branch
+	cmd := exec.Command("git", "worktree", "add", "-b", branchName, worktreePath)
 	cmd.Dir = repoPath
 
 	output, err := cmd.CombinedOutput()

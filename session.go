@@ -64,6 +64,9 @@ func lazyLoadSession(threadID string) *SessionData {
 
 // save session data to .sessions directory
 func saveSessionData(sessionData *SessionData) error {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+
 	data, err := json.MarshalIndent(sessionData, "", "  ")
 	if err != nil {
 		return err

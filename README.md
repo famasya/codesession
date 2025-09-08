@@ -26,6 +26,30 @@ Technical flow:
 - **Multi-Model Support**: Configure multiple AI models for different tasks.
 - **Commit Summarization**: Automated commit message generation with customizable prompts.
 
+## ⚠️ Important Warnings
+
+### Repository Branch Matching
+**The reference repository must be on the correct target branch before starting codesession.**
+
+When you start a new codesession, it will:
+- Run `git pull` on the current branch of your reference repository
+- Create new worktrees based on that branch
+- All coding sessions will branch from whatever branch you're currently on
+
+**Example:**
+- If you want codesession to work on `release` branch → checkout `release` in your reference repository first
+- If you want codesession to work on `main` branch → checkout `main` in your reference repository first
+
+### Git Hooks Are Skipped
+**Commits made by codesession will skip git hooks.**
+
+All commits use the `--no-verify` flag, which means:
+- Pre-commit hooks will NOT run
+- Commit-msg hooks will NOT run
+- This is intentional to avoid blocking automated commits
+
+If your project relies on git hooks for formatting, linting, or validation, you may need to run these checks manually after codesession commits.
+
 ## Available Commands
 - `/ping`: Just reply with pong.
 - `/codesession`: Start new session (create new worktree).
