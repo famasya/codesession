@@ -12,14 +12,14 @@ log_level = "debug"
 # """
 summarizer_instruction = ""
 
-[[model]]
+[[models]]
 provider_id = "openrouter"
 model_id = "z-ai/glm-4.5"
 
-[[model]]
+[[models]]
 provider_id = "opencode"
 model_id = "grok-code"
 
-[[repository]]
-path = "/path/to/repository"
+[[repositories]]
+path = "/path/to/absolute/repository"
 name = "repository_name"
