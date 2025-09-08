@@ -232,6 +232,10 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		instruction = "Generate a git commit message in conventional commit format. The first line should be in the format 'type(scope): description'. Follow with a bullet-point list of key changes made in the session. Keep the entire message concise."
 	}
 	client := Opencode()
+	if client == nil {
+		slog.Error("opencode client is nil")
+		return
+	}
 	response, err := client.Session.Prompt(context.Background(), session.SessionID, opencode.SessionPromptParams{
 		Directory: opencode.F(worktreePath),
 		Tools: opencode.F(map[string]bool{

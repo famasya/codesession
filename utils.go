@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+var reCollapseNewlines = regexp.MustCompile(`\n+`)
+
 // formatBlockquote adds blockquote to text
 func formatBlockquote(text string) string {
 	text = strings.TrimRight(text, "\n")
@@ -20,7 +22,7 @@ func formatBlockquote(text string) string {
 
 func removeExcessiveNewLine(text string) string {
 	text = strings.Trim(text, "\n")
-	return regexp.MustCompile(`\n+`).ReplaceAllString(text, "\n")
+	return reCollapseNewlines.ReplaceAllString(text, "\n")
 }
 
 // appendToContentHistory appends content with smart newline handling

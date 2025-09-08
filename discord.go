@@ -241,6 +241,11 @@ func updateToolStatus(threadID, toolUpdate string) {
 		slog.Error("session not found for tool status update", "thread_id", threadID)
 		return
 	}
+	
+	if sessionData == nil {
+		slog.Error("session data is nil", "thread_id", threadID)
+		return
+	}
 
 	// Format as blockquote and append to tool status history
 	formattedUpdate := formatBlockquote(toolUpdate)

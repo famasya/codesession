@@ -45,10 +45,14 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 	slog.Debug("using absolute worktree path", "thread_id", threadID, "abs_worktree_path", absWorktreePath)
 
 	client := Opencode()
+	if client == nil {
+		slog.Error("opencode client is nil", "thread_id", threadID)
+		return nil
+	}
 	ctx := context.Background()
 
-	// Enhanced message - just pass the user request without confusing path information
-	enhancedMessage := message
+	// Enhanced message - add worktree boundary instruction for defense-in-depth
+	enhancedMessage := message + "\n\nImportant: Stay within the current worktree directory for all file operations."
 
 	response, err := client.Session.Prompt(ctx, session.ID, opencode.SessionPromptParams{
 		Directory: opencode.F(absWorktreePath),

@@ -39,9 +39,9 @@ type SessionData struct {
 }
 
 // Global variables for session management
-var sessionCache = make(map[string]*SessionData)
+var sessionCache = make(map[string]*SessionData, 100) // Pre-allocate for typical load
 var sessionMutex sync.RWMutex
 
 // Active event listeners management
-var activeListeners = make(map[string]context.CancelFunc)
+var activeListeners = make(map[string]context.CancelFunc, 100) // Pre-allocate for typical load
 var listenersMutex sync.RWMutex

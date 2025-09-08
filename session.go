@@ -22,8 +22,15 @@ func lazyLoadSession(threadID string) *SessionData {
 		return sessionData
 	}
 
+	// Ensure sessions directory exists
+	sessionDir, err := ensureSessionDir()
+	if err != nil {
+		slog.Error("failed to ensure sessions directory", "error", err)
+		return nil
+	}
+	
 	// Try to load from file
-	filePath := filepath.Join(sessionsDirectory, fmt.Sprintf("%s.json", threadID))
+	filePath := filepath.Join(sessionDir, fmt.Sprintf("%s.json", threadID))
 	data, err := os.ReadFile(filePath)
 	slog.Debug("lazy loading session from file", "thread_id", threadID, "file_path", filePath, "error", err)
 	if err != nil {
@@ -65,13 +72,21 @@ func saveSessionData(sessionData *SessionData) error {
 		return err
 	}
 
-	filePath := filepath.Join(sessionsDirectory, fmt.Sprintf("%s.json", sessionData.ThreadID))
+	sessionDir, err := ensureSessionDir()
+	if err != nil {
+		return err
+	}
+	filePath := filepath.Join(sessionDir, fmt.Sprintf("%s.json", sessionData.ThreadID))
 	return os.WriteFile(filePath, data, 0644)
 }
 
 // get or create session for thread
 func GetOrCreateSession(threadID, worktreePath, repositoryPath, repositoryName, userID string) *opencode.Session {
 	client := Opencode()
+	if client == nil {
+		slog.Error("opencode client is nil", "thread_id", threadID)
+		return nil
+	}
 
 	// Try to lazy load session first
 	sessionData := lazyLoadSession(threadID)
@@ -136,7 +151,11 @@ func CleanupSession(threadID string) error {
 	defer sessionMutex.Unlock()
 
 	delete(sessionCache, threadID)
-	filePath := filepath.Join(sessionsDirectory, fmt.Sprintf("%s.json", threadID))
+	sessionDir, err := ensureSessionDir()
+	if err != nil {
+		return err
+	}
+	filePath := filepath.Join(sessionDir, fmt.Sprintf("%s.json", threadID))
 	// remove only if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return nil

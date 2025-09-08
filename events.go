@@ -29,6 +29,10 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 	// Use stored worktree path from session data
 	worktreePath := sessionData.WorktreePath
 	client := Opencode()
+	if client == nil {
+		slog.Error("opencode client is nil", "thread_id", threadID)
+		return
+	}
 	stream := client.Event.ListStreaming(ctx, opencode.EventListParams{
 		Directory: opencode.F(worktreePath),
 	})
@@ -115,16 +119,20 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 			if sessionData, exists := sessionCache[threadID]; exists {
 				sessionData.IsStreaming = false
 				slog.Debug("marked session as not streaming", "thread_id", threadID)
+			} else {
+				slog.Error("session not found when clearing streaming state", "thread_id", threadID)
 			}
 			sessionMutex.Unlock()
 
 			// Mention the user that the task is completed (keep existing text responses intact)
 			sessionMutex.RLock()
-			sessionData, exists := sessionCache[threadID]
-			sessionMutex.RUnlock()
-			if exists && sessionData.UserID != "" {
-				mentionMessage := fmt.Sprintf("<@%s> Task completed!", sessionData.UserID)
+			if sessionData, exists := sessionCache[threadID]; exists && sessionData.UserID != "" {
+				userID := sessionData.UserID
+				sessionMutex.RUnlock()
+				mentionMessage := fmt.Sprintf("<@%s> task completed", userID)
 				sendToDiscord(threadID, mentionMessage)
+			} else {
+				sessionMutex.RUnlock()
 			}
 
 			// set session inactive and cleanup
@@ -145,6 +153,8 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 	slog.Debug("opencode events listener stopped", "thread_id", threadID)
 }
 
+// serializeEvent deserializes the event's raw JSON properties into a typed struct.
+// The type T should be a struct with appropriate JSON tags matching the event structure.
 func serializeEvent[T any](event *opencode.EventListResponse) *T {
 	var data T
 	err := json.Unmarshal([]byte(event.JSON.Properties.Raw()), &data)

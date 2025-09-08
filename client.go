@@ -13,6 +13,22 @@ var opencodeClient *opencode.Client
 var worktreesDirectory string
 var sessionsDirectory string
 
+func ensureSessionDir() (string, error) {
+	if sessionsDirectory != "" {
+		return sessionsDirectory, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir := fmt.Sprintf("%s/.sessions", cwd)
+	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
+		return "", mkErr
+	}
+	sessionsDirectory = dir
+	return dir, nil
+}
+
 // setup opencode singleton
 func Opencode() *opencode.Client {
 	if opencodeClient == nil {
@@ -23,7 +39,13 @@ func Opencode() *opencode.Client {
 			return nil
 		}
 		worktreesDirectory = fmt.Sprintf("%s/.worktrees", currentDir)
-		sessionsDirectory = fmt.Sprintf("%s/.sessions", currentDir)
+		
+		// Use ensureSessionDir helper
+		_, err = ensureSessionDir()
+		if err != nil {
+			slog.Error("failed to ensure sessions directory", "error", err)
+			return nil
+		}
 
 		slog.Debug("worktrees directory", "worktrees_directory", worktreesDirectory)
 		slog.Debug("sessions directory", "sessions_directory", sessionsDirectory)
@@ -31,12 +53,6 @@ func Opencode() *opencode.Client {
 		// Create worktrees directory if it doesn't exist
 		if err := os.MkdirAll(worktreesDirectory, 0755); err != nil {
 			slog.Error("failed to create worktrees directory", "error", err)
-			return nil
-		}
-
-		// Create sessions directory if it doesn't exist
-		if err := os.MkdirAll(sessionsDirectory, 0755); err != nil {
-			slog.Error("failed to create sessions directory", "error", err)
 			return nil
 		}
 
