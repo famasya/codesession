@@ -156,12 +156,12 @@ func (g *GitOperations) AddAll(worktreePath string) error {
 func (g *GitOperations) Commit(worktreePath, message string) (string, error) {
 	slog.Debug("creating commit", "worktree_path", worktreePath, "message", message)
 
-	cmd := exec.Command("git", "commit", "-m", message, "--author", "OpenCode Bot <opencode-bot@example.com>")
+	cmd := exec.Command("git", "commit", "-m", message, "--author", "codesessions <bot@codesessions.com>", "--no-verify")
 	cmd.Dir = worktreePath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to create commit: %s", string(output))
+		return "", fmt.Errorf("%s", string(output))
 	}
 
 	// Get the commit hash

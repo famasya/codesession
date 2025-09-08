@@ -40,8 +40,11 @@ type SessionData struct {
 	// Non-serialized runtime fields
 	Session              *opencode.Session `json:"-"` // Don't serialize the session object
 	Active               bool              `json:"-"` // Don't serialize the active state
+	IsStreaming          bool              `json:"-"` // Don't serialize the SSE streaming state
 	LastStatusMessageID  string            `json:"-"` // Don't serialize the last status message ID
 	StatusMessageContent string            `json:"-"` // Don't serialize the current status message content
+	ToolStatusHistory    string            `json:"-"` // Don't serialize the tool/thinking status history
+	CurrentResponse      string            `json:"-"` // Don't serialize the current text response
 	UserID               string            `json:"-"` // Don't serialize the user ID who started the session
 }
 
@@ -338,9 +341,6 @@ func CleanupWorktree(threadID string) error {
 		repoPath = sessionData.RepositoryPath
 		worktreePath = sessionData.WorktreePath
 	} else {
-		worktreePath = filepath.Join(worktreesDirectory, threadID)
-		// When we don't have session data, we can't determine the repo path
-		// This should not happen in normal operations since sessions store repo path
 		return fmt.Errorf("cannot determine repository path for cleanup without session data for thread %s", threadID)
 	}
 	return gitOps.RemoveWorktree(repoPath, worktreePath)
@@ -374,6 +374,13 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 		switch event.Type {
 		case opencode.EventListResponseTypeServerConnected:
 			slog.Debug("started session event listener", "thread_id", threadID, "session_id", sessionData.SessionID)
+			// Ensure streaming state is set when SSE connects
+			sessionMutex.Lock()
+			if sessionData, exists := sessionCache[threadID]; exists {
+				sessionData.IsStreaming = true
+				slog.Debug("confirmed session as streaming", "thread_id", threadID)
+			}
+			sessionMutex.Unlock()
 		case opencode.EventListResponseTypeMessagePartUpdated:
 			// Parse the event directly from raw JSON properties
 			eventData := serializeEvent[struct {
@@ -406,37 +413,28 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 			}
 
 			// format message based on part type
-			var statusUpdate string
-			var shouldCreateNewMessage bool
-
 			switch part.Type {
 			case PartTypeTool:
 				// for tool parts, only send completed tools as status updates
 				if part.Tool != "" && part.State != nil && part.State.Status == ToolStatusCompleted {
-					statusUpdate = fmt.Sprintf("---\nTool: %s\n---", part.Tool)
+					toolUpdate := fmt.Sprintf("|>> tool: %s", part.Tool)
+					updateToolStatus(threadID, toolUpdate)
 				}
 			case PartTypeReasoning:
 				if part.Text != "" {
-					statusUpdate = "*" + part.Text + "*"
+					reasoningUpdate := fmt.Sprintf("|>> thinking: %s", part.Text)
+					updateToolStatus(threadID, reasoningUpdate)
 				}
 			case PartTypeText:
-				// Text responses should be sent as new messages, not status updates
+				// Text responses should be sent as status updates to maintain chronological order
 				if part.Text != "" {
-					cleanText := removeExcessiveNewLine(part.Text)
-					sendToDiscord(threadID, cleanText)
-					shouldCreateNewMessage = true
+					cleanText := fmt.Sprintf("Response:\n%s", removeExcessiveNewLine(part.Text))
+					updateTextResponse(threadID, cleanText)
 				}
 			}
 
 			// debug log
-			slog.Debug("processing message for Discord", "thread_id", threadID, "session_id", sessionData.SessionID, "status_update", statusUpdate, "new_message", shouldCreateNewMessage)
-
-			// update status message if we have a status update
-			if statusUpdate != "" && !shouldCreateNewMessage {
-				// Format the status update as blockquote to handle multi-line content
-				formattedUpdate := formatBlockquote(statusUpdate)
-				updateStatusMessage(threadID, formattedUpdate)
-			}
+			slog.Debug("processing message for Discord", "thread_id", threadID, "session_id", sessionData.SessionID, "part_type", part.Type)
 		case opencode.EventListResponseTypeSessionIdle:
 			eventData := serializeEvent[struct {
 				SessionID string `json:"sessionId"`
@@ -448,10 +446,15 @@ func OpencodeEventsListener(ctx context.Context, wg *sync.WaitGroup, threadID st
 
 			slog.Debug("session idle detected", "thread_id", threadID, "session_id", eventData.SessionID)
 
-			// Mark status message as completed
-			updateStatusMessage(threadID, "Task completed!")
+			// Mark session as no longer streaming (completed)
+			sessionMutex.Lock()
+			if sessionData, exists := sessionCache[threadID]; exists {
+				sessionData.IsStreaming = false
+				slog.Debug("marked session as not streaming", "thread_id", threadID)
+			}
+			sessionMutex.Unlock()
 
-			// Mention the user that the task is completed
+			// Mention the user that the task is completed (keep existing text responses intact)
 			sessionMutex.RLock()
 			sessionData, exists := sessionCache[threadID]
 			sessionMutex.RUnlock()
@@ -558,9 +561,8 @@ func formatBlockquote(text string) string {
 }
 
 func removeExcessiveNewLine(text string) string {
-	// remove excessive to only 1 new line
-	text = regexp.MustCompile(`\n\n+`).ReplaceAllString(text, "\n\n")
-	return text
+	text = strings.Trim(text, "\n")
+	return regexp.MustCompile(`\n+`).ReplaceAllString(text, "\n")
 }
 
 // editDiscordMessage edits an existing Discord message
@@ -580,61 +582,132 @@ func editDiscordMessage(threadID, messageID, newContent string) error {
 	return nil
 }
 
-// updateStatusMessage appends a new status update to the current status message
-// Handles character limits by creating continuation messages when needed
-func updateStatusMessage(threadID, statusUpdate string) {
+// appendToContentHistory appends content with smart newline handling
+func appendToContentHistory(existing, newContent string) string {
+	if existing == "" {
+		return newContent
+	}
+	if strings.HasSuffix(existing, "\n") {
+		return existing + newContent
+	}
+	return existing + "\n" + newContent
+}
+
+// updateToolStatus appends tool status updates (formatted as blockquotes)
+func updateToolStatus(threadID, toolUpdate string) {
 	sessionMutex.Lock()
 	defer sessionMutex.Unlock()
 
 	sessionData, exists := sessionCache[threadID]
 	if !exists {
-		slog.Error("session not found for status update", "thread_id", threadID)
+		slog.Error("session not found for tool status update", "thread_id", threadID)
 		return
 	}
 
+	// Format as blockquote and append to tool status history
+	formattedUpdate := formatBlockquote(toolUpdate)
+	sessionData.ToolStatusHistory = appendToContentHistory(sessionData.ToolStatusHistory, formattedUpdate)
+
+	// Rebuild and update the complete message
+	rebuildStatusMessage(threadID, sessionData)
+}
+
+// updateTextResponse replaces the current response content
+func updateTextResponse(threadID, textResponse string) {
+	sessionMutex.Lock()
+	defer sessionMutex.Unlock()
+
+	sessionData, exists := sessionCache[threadID]
+	if !exists {
+		slog.Error("session not found for text response update", "thread_id", threadID)
+		return
+	}
+
+	// Replace the current response content (not append, replace for new responses)
+	sessionData.CurrentResponse = textResponse
+
+	// Rebuild and update the complete message
+	rebuildStatusMessage(threadID, sessionData)
+}
+
+// rebuildStatusMessage combines content history and updates Discord message
+func rebuildStatusMessage(threadID string, sessionData *SessionData) {
 	const maxMessageLength = 1800 // Leave buffer before Discord's 2000 limit
-	newContent := sessionData.StatusMessageContent + "\n" + statusUpdate
+
+	// Build the complete message content
+	header := "```fix\n✨codesession is working...\n```"
+	var parts []string
+
+	// Add tool status history if present
+	if sessionData.ToolStatusHistory != "" {
+		parts = append(parts, sessionData.ToolStatusHistory)
+	}
+
+	// Add current response if present
+	if sessionData.CurrentResponse != "" {
+		parts = append(parts, sessionData.CurrentResponse)
+	}
+
+	// Combine all parts
+	newContent := header
+	if len(parts) > 0 {
+		newContent += "\n" + strings.Join(parts, "\n")
+	}
 
 	// Check if we need to create a continuation message
 	if len(newContent) > maxMessageLength {
 		// Mark current message as continued
-		continuedContent := sessionData.StatusMessageContent + "\n...continued below..."
 		if sessionData.LastStatusMessageID != "" {
+			continuedContent := sessionData.StatusMessageContent + "\n...continued below..."
 			editDiscordMessage(threadID, sessionData.LastStatusMessageID, continuedContent)
 		}
 
+		// Calculate how much content we can fit in continuation message
+		continueHeader := "```fix\n✨codesession is working (continued...)\n```\n"
+		maxContentForContinuation := maxMessageLength - len(continueHeader)
+
+		// Combine parts and truncate if needed
+		combinedContent := strings.Join(parts, "\n")
+		truncatedContent := combinedContent
+		if len(truncatedContent) > maxContentForContinuation {
+			truncatedContent = truncatedContent[len(truncatedContent)-maxContentForContinuation:]
+			// Try to start from a newline to avoid cutting mid-line
+			if newlineIndex := strings.Index(truncatedContent, "\n"); newlineIndex != -1 {
+				truncatedContent = truncatedContent[newlineIndex+1:]
+			}
+		}
+
 		// Create new continuation message
-		newStatusContent := "```fix\n✨codesession is working (continued...)\n```\n" + statusUpdate
+		newStatusContent := continueHeader + truncatedContent
 		msg, err := discord.ChannelMessageSend(threadID, newStatusContent)
 		if err != nil {
 			slog.Error("failed to create continuation status message", "thread_id", threadID, "error", err)
 			return
 		}
 
-		// Update session data with new message
 		sessionData.LastStatusMessageID = msg.ID
 		sessionData.StatusMessageContent = newStatusContent
 		slog.Debug("created continuation status message", "thread_id", threadID, "message_id", msg.ID)
+		return
+	}
+
+	// Update existing message or create new one
+	if sessionData.LastStatusMessageID == "" {
+		// Create initial status message
+		msg, err := discord.ChannelMessageSend(threadID, newContent)
+		if err != nil {
+			slog.Error("failed to create initial status message", "thread_id", threadID, "error", err)
+			return
+		}
+		sessionData.LastStatusMessageID = msg.ID
+		sessionData.StatusMessageContent = newContent
+		slog.Debug("created initial status message", "thread_id", threadID, "message_id", msg.ID)
 	} else {
-		// Update existing message
-		if sessionData.LastStatusMessageID == "" {
-			// Create initial status message
-			initialContent := "```fix\n✨codesession is working...\n```\n" + statusUpdate
-			msg, err := discord.ChannelMessageSend(threadID, initialContent)
-			if err != nil {
-				slog.Error("failed to create initial status message", "thread_id", threadID, "error", err)
-				return
-			}
-			sessionData.LastStatusMessageID = msg.ID
-			sessionData.StatusMessageContent = initialContent
-			slog.Debug("created initial status message", "thread_id", threadID, "message_id", msg.ID)
-		} else {
-			// Edit existing message
-			sessionData.StatusMessageContent = newContent
-			err := editDiscordMessage(threadID, sessionData.LastStatusMessageID, newContent)
-			if err != nil {
-				slog.Error("failed to update status message", "thread_id", threadID, "error", err)
-			}
+		// Edit existing message
+		sessionData.StatusMessageContent = newContent
+		err := editDiscordMessage(threadID, sessionData.LastStatusMessageID, newContent)
+		if err != nil {
+			slog.Error("failed to update status message", "thread_id", threadID, "error", err)
 		}
 	}
 }

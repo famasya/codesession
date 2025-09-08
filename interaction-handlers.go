@@ -349,7 +349,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"Failed to commit changes."}[0],
+			Content: &[]string{fmt.Sprintf("Failed to commit changes. Error: %v", err)}[0],
 		})
 		return
 	}
@@ -409,7 +409,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Send detailed success message to thread
 	slog.Debug("preparing detailed success message", "thread_id", threadID)
 	slog.Debug("sending detailed success message to thread", "thread_id", threadID)
-	detailedMessage := fmt.Sprintf("**Commit & Push Successful**\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s",
+	detailedMessage := fmt.Sprintf("**Commit & Push Successful** (git hooks skipped)\n\n**Summary:** %s\n**Hash:** %s\n**Branch:** %s\n\n⚠️ Caution: Git hooks are skipped (if any).",
 		summary, commitHash, currentBranch)
 
 	SendDiscordMessage(threadID, detailedMessage)
@@ -488,6 +488,20 @@ func MessageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, "Please provide a message to send to codesession.")
 		return
 	}
+
+	// Check if this is a new query (session not currently streaming)
+	// If so, reset status message fields to start fresh
+	sessionMutex.Lock()
+	if !sessionData.IsStreaming {
+		// This is a new query, reset status message to start fresh
+		sessionData.LastStatusMessageID = ""
+		sessionData.StatusMessageContent = ""
+		sessionData.ToolStatusHistory = ""
+		sessionData.CurrentResponse = ""
+		sessionData.IsStreaming = true // Mark as now streaming
+		slog.Debug("starting new query, reset status message fields", "thread_id", threadID)
+	}
+	sessionMutex.Unlock()
 
 	// send typing indicator
 	s.ChannelTyping(m.ChannelID)
