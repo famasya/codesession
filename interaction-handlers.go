@@ -387,7 +387,7 @@ func handleCommitCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &[]string{"Failed to push changes."}[0],
+			Content: &[]string{fmt.Sprintf("Failed to push changes. Error: %v.", err)}[0],
 		})
 		return
 	}
