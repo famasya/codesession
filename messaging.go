@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sst/opencode-sdk-go"
 )
@@ -49,7 +50,8 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 		slog.Error("opencode client is nil", "thread_id", threadID)
 		return nil
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	// Enhanced message - add worktree boundary instruction for defense-in-depth
 	enhancedMessage := message + "\n\nImportant: Stay within the current worktree directory for all file operations."
@@ -68,7 +70,7 @@ func SendMessage(threadID string, message string) *opencode.SessionPromptRespons
 		}),
 	})
 	if err != nil {
-		slog.Error("failed to send message", "error", err)
+		slog.Error("failed to send message", "thread_id", threadID, "session_id", session.ID, "error", err)
 		return nil
 	}
 

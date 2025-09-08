@@ -64,9 +64,6 @@ func lazyLoadSession(threadID string) *SessionData {
 
 // save session data to .sessions directory
 func saveSessionData(sessionData *SessionData) error {
-	sessionMutex.Lock()
-	defer sessionMutex.Unlock()
-
 	data, err := json.MarshalIndent(sessionData, "", "  ")
 	if err != nil {
 		return err
@@ -181,7 +178,7 @@ func SetSessionActiveBySessionID(sessionID string, active bool) *SessionData {
 	defer sessionMutex.Unlock()
 
 	for _, sessionData := range sessionCache {
-		if sessionData.Session.ID == sessionID {
+		if sessionData.Session != nil && sessionData.Session.ID == sessionID {
 			sessionData.Active = active
 			return sessionData
 		}
@@ -206,7 +203,7 @@ func IsSessionActiveBySessionID(sessionID string) bool {
 	defer sessionMutex.RUnlock()
 
 	for _, sessionData := range sessionCache {
-		if sessionData.Session.ID == sessionID {
+		if sessionData.Session != nil && sessionData.Session.ID == sessionID {
 			return sessionData.Active
 		}
 	}
