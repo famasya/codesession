@@ -604,7 +604,7 @@ func updateStatusMessage(threadID, statusUpdate string) {
 		}
 
 		// Create new continuation message
-		newStatusContent := "CodeSession Working (continued)...\n...continued from above...\n" + statusUpdate
+		newStatusContent := "```fix\n✨codesession is working (continued...)\n```" + statusUpdate
 		msg, err := discord.ChannelMessageSend(threadID, newStatusContent)
 		if err != nil {
 			slog.Error("failed to create continuation status message", "thread_id", threadID, "error", err)
@@ -619,7 +619,7 @@ func updateStatusMessage(threadID, statusUpdate string) {
 		// Update existing message
 		if sessionData.LastStatusMessageID == "" {
 			// Create initial status message
-			initialContent := "CodeSession Working...\n" + statusUpdate
+			initialContent := "```fix\n✨codesession is working...\n```" + statusUpdate
 			msg, err := discord.ChannelMessageSend(threadID, initialContent)
 			if err != nil {
 				slog.Error("failed to create initial status message", "thread_id", threadID, "error", err)

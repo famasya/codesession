@@ -103,7 +103,7 @@ func registerCommands(s *discordgo.Session) error {
 		},
 		{
 			Name:        "codesession",
-			Description: "Starting work with CodeSession",
+			Description: "Start new codesession",
 			Type:        discordgo.ChatApplicationCommand,
 			Options: []*discordgo.ApplicationCommandOption{
 				{
@@ -180,10 +180,10 @@ func SendDiscordDiffMessage(threadID string, diffOutput string) {
 		} else {
 			remaining = ""
 		}
-		
+
 		// Wrap each chunk in diff code block
 		wrappedChunk := fmt.Sprintf("```diff\n%s\n```", chunk)
-		
+
 		if _, err := discord.ChannelMessageSend(threadID, wrappedChunk); err != nil {
 			slog.Error("failed to send diff message to discord", "thread_id", threadID, "error", err)
 			break
