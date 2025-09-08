@@ -38,42 +38,11 @@ jobs:
         GOOS=linux GOARCH=amd64 go build -o codesession-linux-amd64 .
 
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
+      if: github.ref_type == 'tag'
       with:
-        tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
-        draft: false
-        prerelease: false
-
-    - name: Upload macOS Apple Silicon Binary
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./codesession-darwin-arm64
-        asset_name: codesession-darwin-arm64
-        asset_content_type: application/octet-stream
-
-    - name: Upload macOS Intel Binary
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./codesession-darwin-amd64
-        asset_name: codesession-darwin-amd64
-        asset_content_type: application/octet-stream
-
-    - name: Upload Linux Binary
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./codesession-linux-amd64
-        asset_name: codesession-linux-amd64
-        asset_content_type: application/octet-stream
+        name: Release ${{ github.ref_name }}
+        files: |
+          codesession-darwin-arm64
+          codesession-darwin-amd64
+          codesession-linux-amd64
