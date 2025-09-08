@@ -7,6 +7,25 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+func SetLogLevel(levelStr string) {
+	var level slog.Level
+	switch levelStr {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo // default to info
+	}
+
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	slog.SetDefault(slog.New(handler))
+}
+
 type Config struct {
 	BotToken              string       `toml:"bot_token"`
 	OpencodePort          int          `toml:"opencode_port"`

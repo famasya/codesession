@@ -8,3 +8,4 @@ discord-opencode
 !.worktrees/.gitkeep
 config.toml
 .mcp.json
+.task/

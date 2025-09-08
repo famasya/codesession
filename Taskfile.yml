@@ -2,7 +2,94 @@ version: '3'
 
 tasks:
   default:
+    desc: Start development server with live reload
+    cmds:
+      - task: dev
+
+  dev:
+    desc: Start development server with air (live reload)
     cmds:
       - cmd: air
-      # - cmd: opencode serve -p 5000
-    # parallel: true
+    silent: true
+
+  build:
+    desc: Build the application
+    cmds:
+      - cmd: go build -o ./discord-bot ./cmd/discord-bot
+    sources:
+      - cmd/discord-bot/*.go
+      - config/*.toml
+    generates:
+      - discord-bot
+
+  run:
+    desc: Build and run the application
+    deps: [build]
+    cmds:
+      - cmd: ./discord-bot
+
+  test:
+    desc: Run all tests
+    cmds:
+      - cmd: go test ./cmd/discord-bot -v
+    silent: true
+
+  test:short:
+    desc: Run tests with short flag
+    cmds:
+      - cmd: go test ./cmd/discord-bot -short
+    silent: true
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cmd: rm -f discord-bot
+      - cmd: rm -rf tmp/
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - cmd: go fmt ./cmd/discord-bot
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - cmd: go vet ./cmd/discord-bot
+
+  lint:
+    desc: Run golangci-lint (if installed)
+    cmds:
+      - cmd: golangci-lint run ./cmd/discord-bot
+    ignore_error: true
+
+  check:
+    desc: Run fmt, vet, and test
+    deps: [fmt, vet, test]
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - cmd: go mod download
+      - cmd: go mod tidy
+
+  docker:build:
+    desc: Build Docker image
+    cmds:
+      - cmd: docker build -t discord-opencode .
+    preconditions:
+      - sh: command -v docker
+        msg: "Docker is not installed"
+
+  docker:run:
+    desc: Run with Docker
+    deps: [docker:build]
+    cmds:
+      - cmd: docker run --rm -it discord-opencode
+    preconditions:
+      - sh: command -v docker
+        msg: "Docker is not installed"
+
+  help:
+    desc: Show available tasks
+    cmds:
+      - cmd: task --list

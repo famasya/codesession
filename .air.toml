@@ -5,7 +5,7 @@ tmp_dir = "tmp"
 [build]
   args_bin = []
   bin = "./tmp/main"
-  cmd = "go build -o ./tmp/main ."
+   cmd = "go build -o ./tmp/main ./cmd/discord-bot"
   delay = 1000
   kill_delay = "1s"
   exclude_dir = ["assets", "tmp", "vendor", "testdata"]

@@ -28,7 +28,7 @@ func lazyLoadSession(threadID string) *SessionData {
 		slog.Error("failed to ensure sessions directory", "error", err)
 		return nil
 	}
-	
+
 	// Try to load from file
 	filePath := filepath.Join(sessionDir, fmt.Sprintf("%s.json", threadID))
 	data, err := os.ReadFile(filePath)

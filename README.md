@@ -62,6 +62,10 @@ If your project relies on git hooks for formatting, linting, or validation, you 
 2. **Configure**: Copy `config.example.toml` to `config.toml` and add your Discord bot token
 3. **Install**: See [INSTALLATION.md](INSTALLATION.md) for detailed installation and daemon setup instructions
 
+## Development
+
+This project uses [Task](https://taskfile.dev/) for development workflow management. Make sure you have Task installed (`go install github.com/go-task/task/v3/cmd/task@latest`). See [Taskfile.yml](Taskfile.yml) for available tasks.
+
 ## Configuration
 
 The bot uses TOML configuration with support for:

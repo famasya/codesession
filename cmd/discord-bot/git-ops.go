@@ -25,7 +25,6 @@ func NewGitOperations() *GitOperations {
 	return &GitOperations{}
 }
 
-
 // CreateWorktree creates a new git worktree at the specified path with a branch
 func (g *GitOperations) CreateWorktree(repoPath, worktreePath, branchName string) error {
 	slog.Debug("creating worktree", "repo_path", repoPath, "worktree_path", worktreePath, "branch", branchName)
@@ -103,7 +102,7 @@ func (g *GitOperations) RemoveWorktree(repoPath, worktreePath string) error {
 func (g *GitOperations) GetStatus(worktreePath string) (*GitStatus, error) {
 	slog.Debug("getting git status", "worktree_path", worktreePath)
 
-	cmd := exec.Command("git", "status", "--porcelain=v1 -z")
+	cmd := exec.Command("git", "status", "--porcelain=v1")
 	cmd.Dir = worktreePath
 
 	output, err := cmd.CombinedOutput()
@@ -220,7 +219,7 @@ func (g *GitOperations) Push(worktreePath, branch string) error {
 		// Continue with push - might be a new branch
 	} else {
 		slog.Debug("fetched latest remote state", "worktree_path", worktreePath, "branch", branch)
-		
+
 		// Reset to remote state to accept remote as source of truth (coding agent philosophy)
 		// This ensures human changes/fixes take precedence over agent changes
 		resetCmd := exec.Command("git", "reset", "--hard", "origin/"+branch)
