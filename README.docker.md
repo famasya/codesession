@@ -13,6 +13,7 @@ This Discord bot uses Docker for easy deployment and consistent environments wit
 2. **Create data directories**:
    ```bash
    mkdir -p data/sessions data/worktrees
+   chmod 644 config.toml  # Ensure container can read config
    ```
 
 3. **Run with Docker Compose**:
@@ -40,16 +41,6 @@ The following directories are persistent across container restarts:
 - `.sessions/` - Bot session data
 - `.worktrees/` - Git worktree data
 
-## Backup
-
-Optional backup service is included:
-```bash
-# Run backup manually
-docker-compose --profile backup run --rm backup
-
-# Production backup (automatic retention)
-docker-compose -f docker-compose.prod.yml run --rm backup
-```
 
 ## Building
 

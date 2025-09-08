@@ -2,8 +2,8 @@ version: '3.8'
 
 services:
   codesession:
-    image: ghcr.io/trustmedis/discord-opencode:latest
-    container_name: codesession-prod
+    image: ghcr.io/famasya/codesession:latest
+    container_name: codese
     restart: always
     volumes:
       # Persistent storage for sessions and worktrees
@@ -27,30 +27,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Production backup service
-  backup:
-    image: alpine:latest
-    container_name: codesession-backup-prod
-    restart: "no"
-    volumes:
-      - sessions_data:/backup/sessions:ro
-      - worktrees_data:/backup/worktrees:ro
-      - ${BACKUP_PATH:-./backups}:/output
-    environment:
-      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
-    command: |
-      sh -c "
-        # Create backup
-        echo 'Creating production backup...'
-        TIMESTAMP=$$(date +%Y%m%d-%H%M%S)
-        tar czf /output/codesession-backup-$${TIMESTAMP}.tar.gz -C /backup .
-        
-        # Clean old backups (keep last 30 days by default)
-        echo 'Cleaning old backups...'
-        find /output -name 'codesession-backup-*.tar.gz' -mtime +$${BACKUP_RETENTION_DAYS:-30} -delete
-        
-        echo 'Backup completed: codesession-backup-'$${TIMESTAMP}'.tar.gz'
-      "
 
 networks:
   codesession-net:
@@ -62,10 +38,10 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${SESSIONS_DATA_PATH:-./prod-data/sessions}
+      device: ${SESSIONS_DATA_PATH:-./data/sessions}
   worktrees_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${WORKTREES_DATA_PATH:-./prod-data/worktrees}
+      device: ${WORKTREES_DATA_PATH:-./data/worktrees}

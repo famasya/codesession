@@ -15,23 +15,6 @@ services:
       - ./config.toml:/app/config.toml:ro
     networks:
       - codesession-net
-    
-  # Optional: Add a volume backup service for important data
-  backup:
-    image: alpine:latest
-    container_name: codesession-backup
-    profiles:
-      - backup
-    volumes:
-      - ./data/sessions:/backup/sessions:ro
-      - ./data/worktrees:/backup/worktrees:ro
-      - ./backups:/output
-    command: |
-      sh -c "
-        echo 'Creating backup...'
-        tar czf /output/backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /backup .
-        echo 'Backup completed'
-      "
 
 networks:
   codesession-net:
