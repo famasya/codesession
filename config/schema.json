@@ -8,11 +8,7 @@
     "opencode": {
       "description": "opencode configuration",
       "type": "object",
-      "properties": {
-        "config": {
-          "$ref": "https://opencode.ai/config.json"
-        }
-      }
+      "$ref": "https://opencode.ai/config.json"
     },
     "bot_token": {
       "type": "string",
