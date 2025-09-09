@@ -10,3 +10,4 @@ config.toml
 .mcp.json
 .task/
 config.jsonc
+opencodetmp/*
