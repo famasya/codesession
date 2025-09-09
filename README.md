@@ -59,7 +59,7 @@ If your project relies on git hooks for formatting, linting, or validation, you 
 ## Quick Start
 
 1. **Download**: Get the latest release for your platform from the [releases page](https://github.com/famasya/codesession/releases)
-2. **Configure**: Copy `config.example.toml` to `config.toml` and add your Discord bot token
+2. **Configure**: Copy `config.example.jsonc` to `config.jsonc` and add your Discord bot token
 3. **Install**: See [INSTALLATION.md](INSTALLATION.md) for detailed installation and daemon setup instructions
 
 ## Development
@@ -68,7 +68,7 @@ This project uses [Task](https://taskfile.dev/) for development workflow managem
 
 ## Configuration
 
-The bot uses TOML configuration with support for:
+The bot uses JSONC (JSON with comments) configuration with support for:
 - Discord bot token
 - OpenCode server settings
 - Multiple AI model providers (OpenRouter, OpenCode, whatever Opencode support)
@@ -76,7 +76,7 @@ The bot uses TOML configuration with support for:
 - Logging levels
 - Custom commit summarizer instructions
 
-See `config.example.toml` for a complete configuration template.
+See `config.example.jsonc` for a complete configuration template.
 
 
 ## License

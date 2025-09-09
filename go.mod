@@ -2,7 +2,7 @@ module codesession
 
 go 1.24
 
-require github.com/BurntSushi/toml v1.5.0
+// JSONC support using standard library with comment stripping
 
 require (
 	github.com/tidwall/gjson v1.14.4 // indirect

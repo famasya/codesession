@@ -17,10 +17,10 @@
    ```
 
 3. **Create configuration**:
-   ```bash
-   sudo wget https://raw.githubusercontent.com/famasya/codesession/main/config.example.toml -O /opt/codesession/config.toml
-   sudo nano /opt/codesession/config.toml  # Edit with your Discord bot token and settings
-   ```
+    ```bash
+    sudo wget https://raw.githubusercontent.com/famasya/codesession/main/config/config.example.jsonc -O /opt/codesession/config.jsonc
+    sudo nano /opt/codesession/config.jsonc  # Edit with your Discord bot token and settings
+    ```
 
 4. **Install OpenCode** for the user:
    ```bash
@@ -86,7 +86,7 @@
 
 ## Configuration
 
-Edit `/opt/codesession/config.toml` with your settings:
+Edit `/opt/codesession/config.jsonc` with your settings:
 
 - `bot_token`: Your Discord bot token
 - `opencode_port`: Port for OpenCode integration (default: 5000)  

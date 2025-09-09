@@ -1,0 +1,27 @@
+{
+  // Test configuration for codesession bot
+  "bot_token": "test-discord-token-123456",
+  "opencode_port": 8080,
+  "log_level": "error",
+  "summarizer_instruction": "Generate concise commit messages for test scenarios.",
+  "repositories": [
+    {
+      "name": "test-repo-1",
+      "path": "/tmp/test-repo-1"
+    },
+    {
+      "name": "test-repo-2",
+      "path": "/tmp/test-repo-2"
+    }
+  ],
+  "models": [
+    {
+      "provider_id": "openai",
+      "model_id": "gpt-4"
+    },
+    {
+      "provider_id": "anthropic",
+      "model_id": "claude-3-sonnet-20241022"
+    }
+  ]
+}

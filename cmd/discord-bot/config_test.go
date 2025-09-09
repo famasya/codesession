@@ -9,21 +9,25 @@ import (
 func TestLoadConfig(t *testing.T) {
 	// Create a temporary config file for testing
 	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.toml")
+	configPath := filepath.Join(tempDir, "config.jsonc")
 
-	configContent := `
-log_level = "debug"
-bot_token = "test_token"
-opencode_port = 8080
-
-[[repositories]]
-name = "test-repo"
-path = "/path/to/repo"
-
-[[models]]
-provider_id = "openrouter"
-model_id = "gpt-4"
-`
+	configContent := `{
+  "log_level": "debug",
+  "bot_token": "test_token",
+  "opencode_port": 8080,
+  "repositories": [
+    {
+      "name": "test-repo",
+      "path": "/path/to/repo"
+    }
+  ],
+  "models": [
+    {
+      "provider_id": "openrouter",
+      "model_id": "gpt-4"
+    }
+  ]
+}`
 
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
@@ -78,7 +82,7 @@ model_id = "gpt-4"
 }
 
 func TestLoadConfigMissingFile(t *testing.T) {
-	// Change to a directory without config.toml
+	// Change to a directory without config.jsonc
 	tempDir := t.TempDir()
 	originalWd, _ := os.Getwd()
 	defer os.Chdir(originalWd)
@@ -90,15 +94,15 @@ func TestLoadConfigMissingFile(t *testing.T) {
 	}
 }
 
-func TestLoadConfigInvalidTOML(t *testing.T) {
+func TestLoadConfigInvalidJSONC(t *testing.T) {
 	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.toml")
+	configPath := filepath.Join(tempDir, "config.jsonc")
 
-	// Write invalid TOML content
-	invalidContent := `
-log_level = "debug"
-[discord
-token = "incomplete_section"
+	// Write invalid JSONC content
+	invalidContent := `{
+  "log_level": "debug",
+  "discord": {
+    "token": "incomplete_section"
 `
 
 	err := os.WriteFile(configPath, []byte(invalidContent), 0644)
@@ -112,7 +116,7 @@ token = "incomplete_section"
 
 	err = LoadConfig()
 	if err == nil {
-		t.Error("Expected error when config file has invalid TOML, got nil")
+		t.Error("Expected error when config file has invalid JSONC, got nil")
 	}
 }
 

@@ -1,0 +1,13 @@
+{
+  "$schema": "./schema.json",
+  "bot_token": "",
+  "opencode_port": 5000,
+  "log_level": "debug",
+  "summarizer_instruction": "",
+  "repositories": [
+    {
+      "path": "/Users/famasya/dev/trustmedis/hisv1/hisv1-phoenix",
+      "name": "hisv1-phoenix"
+    }
+  ]
+}

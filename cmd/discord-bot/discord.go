@@ -24,7 +24,7 @@ func RunDiscordBot(ctx context.Context, wg *sync.WaitGroup) {
 
 	botToken := AppConfig.BotToken
 	if botToken == "" {
-		slog.Error("bot_token is not set in config.toml")
+		slog.Error("bot_token is not set in config.jsonc")
 		return
 	}
 

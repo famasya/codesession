@@ -11,7 +11,7 @@ This is a Discord bot that integrates with [Opencode](https://opencode.ai), allo
   - `opencode-server.go`: OpenCode server management and lifecycle
   - `opencode-client.go`: OpenCode client integration, session management, and event streaming
   - `opencode-event-types.go`: Type definitions for OpenCode event handling
-  - `config.go`: TOML configuration loading and management
+  - `config.go`: JSONC configuration loading and management
 
 - **Core Features**:
   - Discord slash commands for starting Opencode sessions
@@ -31,21 +31,27 @@ This is a Discord bot that integrates with [Opencode](https://opencode.ai), allo
 
 ## Configuration
 
-The application requires a `config.toml` file (excluded from git). Use `config.example.toml` as a template:
+The application requires a `config.jsonc` file (excluded from git). Use `config.example.jsonc` as a template:
 
-```toml
-bot_token = "your_discord_bot_token"
-opencode_port = 5000
-log_level = "debug"
-summarizer_instruction = ""  # Optional custom AI commit summarizer
-
-[[model]]
-provider_id = "openrouter"
-model_id = "z-ai/glm-4.5"
-
-[[repository]]
-path = "/path/to/repository"
-name = "repository_name"
+```jsonc
+{
+  "bot_token": "your_discord_bot_token",
+  "opencode_port": 5000,
+  "log_level": "debug",
+  "summarizer_instruction": "", // Optional custom AI commit summarizer
+  "models": [
+    {
+      "provider_id": "openrouter",
+      "model_id": "z-ai/glm-4.5"
+    }
+  ],
+  "repositories": [
+    {
+      "path": "/path/to/repository",
+      "name": "repository_name"
+    }
+  ]
+}
 ```
 
 ## Session Management
@@ -59,7 +65,7 @@ name = "repository_name"
 
 - `github.com/bwmarrin/discordgo`: Discord API client
 - `github.com/sst/opencode-sdk-go`: OpenCode integration
-- `github.com/BurntSushi/toml`: Configuration parsing
+- Standard library `encoding/json` with comment stripping: JSONC configuration parsing
 - `github.com/goombaio/namegenerator`: Random thread naming
 
 ## Code Patterns

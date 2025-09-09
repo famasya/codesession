@@ -1,0 +1,29 @@
+{
+  // Discord bot token
+  "bot_token": "",
+  "opencode_port": 5000,
+  "log_level": "debug",
+  // OpenRouter API key
+  "openrouter_key": "",
+  // Optional: custom instruction for the commit summarizer.
+  // Leave empty to use the built-in default prompt.
+  // For multi-line prompts, use JSON string with \n for newlines:
+  // "summarizer_instruction": "Summarize commits with:\n- short title\n- bullet points for changes\n- imperative mood\n"
+  "summarizer_instruction": "",
+  "models": [
+    {
+      "provider_id": "openrouter",
+      "model_id": "z-ai/glm-4.5"
+    },
+    {
+      "provider_id": "opencode",
+      "model_id": "grok-code"
+    }
+  ],
+  "repositories": [
+    {
+      "path": "/path/to/absolute/repository",
+      "name": "repository_name"
+    }
+  ]
+}
